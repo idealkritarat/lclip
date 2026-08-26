@@ -16,6 +16,8 @@ path = "src/main.rs"
 lcp-core = { path = "../lcp-core" }
 lcp-ipc = { path = "../lcp-ipc" }
 lcp-protocol = { path = "../lcp-protocol" }
+iroh = "1"
+iroh-tickets = "1"
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }

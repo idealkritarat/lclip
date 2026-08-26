@@ -12,7 +12,13 @@ use crate::server::{handle_connection, RequestHandler};
 /// `~/Library/Application Support/lcp/lanclipd.sock`. Duplicated in spirit from
 /// `lcp-core::config::app_dir` rather than shared, since `lcp-cli` must not depend on
 /// `lcp-core` (spec §4.1's dependency direction) but still needs to find this path.
+///
+/// Also honors `LCP_PROFILE_DIR` (see `lcp-core::config::app_dir`), the dev/test escape hatch
+/// for running multiple local "machines" -- each gets its own directory and thus its own socket.
 pub fn default_socket_path() -> std::io::Result<std::path::PathBuf> {
+    if let Ok(dir) = std::env::var("LCP_PROFILE_DIR") {
+        return Ok(std::path::PathBuf::from(dir).join("lanclipd.sock"));
+    }
     let base = directories::BaseDirs::new()
         .ok_or_else(|| std::io::Error::other("could not determine platform config directory"))?;
     Ok(base.config_dir().join("lcp").join("lanclipd.sock"))

@@ -94,13 +94,9 @@ fn render(
         queue!(
             stdout,
             Print(format!(
-                "{marker}{time:<tw$}{sender:<sw$}{preview}",
-                marker = marker,
-                time = time,
-                tw = time_width,
-                sender = row.sender_label,
-                sw = sender_width,
-                preview = preview,
+                "{marker}{}{}{preview}",
+                fit(&time, time_width),
+                fit(&row.sender_label, sender_width),
             )),
             Print("\r\n"),
         )?;
@@ -112,6 +108,19 @@ fn render(
     )?;
     stdout.flush()?;
     Ok(())
+}
+
+/// Pads/truncates to exactly `width` visible characters, so a fixed-column layout never glues
+/// into the next column the way a plain `{:<width$}` would once content exceeds that width
+/// (e.g. a long peer alias butting straight into the preview text).
+fn fit(text: &str, width: usize) -> String {
+    let char_count = text.chars().count();
+    if char_count <= width {
+        format!("{text:<width$}")
+    } else {
+        let truncated: String = text.chars().take(width.saturating_sub(1)).collect();
+        format!("{truncated}\u{2026}")
+    }
 }
 
 /// Collapses newline/tab/repeated whitespace to one space, then truncates to `max_width`

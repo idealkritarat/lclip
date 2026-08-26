@@ -67,6 +67,55 @@ pub fn resolve_identifier<'a>(peers: &'a [TrustedPeer], identifier: &str) -> Res
     }
 }
 
+/// Picks a unique alias for a newly-paired peer, starting from their display name and
+/// appending `-2`, `-3`, ... on collision. Spec §7.5/§7.7 don't define an interactive
+/// alias-picking step during pairing, so auto-disambiguating keeps pairing itself simple; a
+/// user can still edit `alias` directly in the config file afterward if they want something
+/// else, since no `lcp peers rename` command exists in the spec's CLI surface.
+pub fn unique_alias(peers: &[TrustedPeer], display_name: &str) -> String {
+    let trimmed = display_name.trim();
+    let base: String = if trimmed.is_empty() {
+        "Peer".to_string()
+    } else {
+        trimmed.chars().take(28).collect()
+    };
+    if find_alias_case_insensitive(peers, &base).is_none() {
+        return base;
+    }
+    for n in 2..1000 {
+        let candidate = format!("{base}-{n}");
+        if find_alias_case_insensitive(peers, &candidate).is_none() {
+            return candidate;
+        }
+    }
+    format!("{base}-{}", uuid::Uuid::new_v4().simple())
+}
+
+pub fn add_trusted_peer(
+    peers: &mut Vec<TrustedPeer>,
+    endpoint_id: String,
+    display_name: &str,
+    device_name: String,
+    paired_at: String,
+) -> String {
+    let alias = unique_alias(peers, display_name);
+    peers.push(TrustedPeer {
+        endpoint_id,
+        alias: alias.clone(),
+        remote_display_name: display_name.to_string(),
+        device_name,
+        paired_at,
+    });
+    alias
+}
+
+/// Returns `true` if a peer was actually removed.
+pub fn remove_trusted_peer(peers: &mut Vec<TrustedPeer>, endpoint_id: &str) -> bool {
+    let before = peers.len();
+    peers.retain(|p| p.endpoint_id != endpoint_id);
+    peers.len() != before
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +208,34 @@ mod tests {
             resolve_identifier(&peers, "zzzz"),
             Resolved::NotFound
         ));
+    }
+
+    #[test]
+    fn unique_alias_uses_display_name_when_free() {
+        let peers = vec![];
+        assert_eq!(unique_alias(&peers, "First"), "First");
+    }
+
+    #[test]
+    fn unique_alias_disambiguates_on_collision() {
+        let peers = vec![peer("First", "aaaa1111")];
+        assert_eq!(unique_alias(&peers, "First"), "First-2");
+    }
+
+    #[test]
+    fn add_and_remove_trusted_peer_round_trip() {
+        let mut peers = vec![];
+        let alias = add_trusted_peer(
+            &mut peers,
+            "endpoint-a".into(),
+            "First",
+            "First-PC".into(),
+            "2026-08-27T00:00:00Z".into(),
+        );
+        assert_eq!(alias, "First");
+        assert_eq!(peers.len(), 1);
+        assert!(remove_trusted_peer(&mut peers, "endpoint-a"));
+        assert!(peers.is_empty());
+        assert!(!remove_trusted_peer(&mut peers, "endpoint-a"));
     }
 }

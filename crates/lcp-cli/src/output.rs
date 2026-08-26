@@ -25,3 +25,18 @@ pub fn print_json(value: &serde_json::Value) {
         Err(_) => println!("{value}"),
     }
 }
+
+/// Blocking stdin prompt used by `invite`/`pair` to ask the human to confirm a verification
+/// string. Safe to call from an async fn on the multi-threaded Tokio runtime -- it parks this
+/// worker thread, but other tasks (e.g. the IPC client's background reader) keep running on the
+/// runtime's other threads.
+pub fn prompt_yes_no(prompt: &str) -> bool {
+    use std::io::Write;
+    print!("{prompt}");
+    let _ = std::io::stdout().flush();
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line).is_err() {
+        return false;
+    }
+    matches!(line.trim().to_lowercase().as_str(), "y" | "yes")
+}

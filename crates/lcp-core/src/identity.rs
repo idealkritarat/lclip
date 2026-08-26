@@ -4,7 +4,21 @@ use thiserror::Error;
 use zeroize::Zeroize;
 
 const KEYRING_SERVICE: &str = "lcp";
-const KEYRING_ACCOUNT: &str = "identity-secret-key";
+
+/// Normally a fixed account name -- but `LCP_PROFILE_DIR` (see `config::app_dir`) is a dev/test
+/// escape hatch for running multiple local "machines", and those must not share one identity,
+/// so the credential-store account is namespaced by profile dir when that's set.
+fn keyring_account() -> String {
+    match std::env::var("LCP_PROFILE_DIR") {
+        Ok(dir) => {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            dir.hash(&mut hasher);
+            format!("identity-secret-key-{:x}", hasher.finish())
+        }
+        Err(_) => "identity-secret-key".to_string(),
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum IdentityError {
@@ -33,7 +47,7 @@ impl LocalIdentity {
 }
 
 fn open_entry() -> Result<keyring::Entry, IdentityError> {
-    keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
+    keyring::Entry::new(KEYRING_SERVICE, &keyring_account())
         .map_err(|e| IdentityError::CredentialStore(e.to_string()))
 }
 

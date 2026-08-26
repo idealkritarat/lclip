@@ -1,14 +1,19 @@
 use std::sync::Arc;
+use std::time::Duration;
 
+use iroh_tickets::Ticket;
 use uuid::Uuid;
 
 use lcp_core::config::Config;
 use lcp_core::conversation::MessageStatus;
+use lcp_core::pairing;
 use lcp_core::peers::{self, Resolved};
 use lcp_core::state::{AppState, SharedState};
+use lcp_core::transport;
 use lcp_ipc::{EventSender, RequestHandler};
 use lcp_protocol::ipc::{error_codes, methods, IpcRequest, IpcResponse};
 use lcp_protocol::network::validate_text_len;
+use lcp_protocol::ticket::{clamp_invite_ttl_secs, PairingTicketV1, DEFAULT_INVITE_TTL_SECS};
 use lcp_protocol::{IPC_PROTOCOL_VERSION, NETWORK_PROTOCOL_VERSION};
 use tokio::sync::{Notify, RwLock};
 
@@ -51,13 +56,61 @@ fn message_json(message: &lcp_core::conversation::StoredMessage) -> serde_json::
     })
 }
 
+fn now_unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 struct Dispatcher {
     state: SharedState,
+    endpoint: iroh::Endpoint,
     shutdown: Arc<Notify>,
 }
 
+impl Dispatcher {
+    async fn resolve_pairing_decision(&self, request: &IpcRequest, confirmed: bool) -> IpcResponse {
+        let pairing_id = match request
+            .params
+            .get("pairing_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+        {
+            Some(id) => id,
+            None => {
+                return IpcResponse::err(
+                    IPC_PROTOCOL_VERSION,
+                    request.id,
+                    error_codes::INVALID_PARAMS,
+                    "expected a valid uuid string 'pairing_id'",
+                )
+            }
+        };
+        let sender = {
+            let mut state = self.state.write().await;
+            state
+                .pending_pairings
+                .get_mut(&pairing_id)
+                .and_then(|p| p.local_decision_tx.take())
+        };
+        match sender {
+            Some(tx) => {
+                let _ = tx.send(confirmed);
+                IpcResponse::ok(IPC_PROTOCOL_VERSION, request.id, serde_json::json!({}))
+            }
+            None => IpcResponse::err(
+                IPC_PROTOCOL_VERSION,
+                request.id,
+                error_codes::PAIRING_FAILED,
+                "no such pending pairing (already decided, rejected, or expired)",
+            ),
+        }
+    }
+}
+
 impl RequestHandler for Dispatcher {
-    async fn handle(&self, request: IpcRequest, _events: EventSender) -> IpcResponse {
+    async fn handle(&self, request: IpcRequest, events: EventSender) -> IpcResponse {
         if request.ipc_version != IPC_PROTOCOL_VERSION {
             return IpcResponse::err(
                 IPC_PROTOCOL_VERSION,
@@ -184,6 +237,134 @@ impl RequestHandler for Dispatcher {
                     serde_json::Value::Array(peers),
                 )
             }
+            methods::CREATE_INVITE => {
+                let ttl_secs = clamp_invite_ttl_secs(
+                    request
+                        .params
+                        .get("ttl_secs")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(DEFAULT_INVITE_TTL_SECS),
+                );
+
+                let _ = tokio::time::timeout(Duration::from_secs(10), self.endpoint.online()).await;
+                let endpoint_ticket =
+                    iroh_tickets::endpoint::EndpointTicket::new(self.endpoint.addr());
+                let expires_at_unix_ms = now_unix_ms() + (ttl_secs as i64) * 1000;
+                let invite_secret = pairing::random_secret();
+
+                let (display_name, device_name) = {
+                    let state = self.state.read().await;
+                    (
+                        state.config.user.name.clone(),
+                        state.config.user.device_name.clone(),
+                    )
+                };
+
+                let pairing_ticket = PairingTicketV1::new(
+                    endpoint_ticket.encode_string(),
+                    invite_secret,
+                    expires_at_unix_ms,
+                    display_name,
+                    device_name,
+                );
+                let ticket_text = match pairing_ticket.encode() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        return IpcResponse::err(
+                            IPC_PROTOCOL_VERSION,
+                            request.id,
+                            error_codes::INTERNAL,
+                            e.to_string(),
+                        )
+                    }
+                };
+
+                {
+                    let mut state = self.state.write().await;
+                    state.active_invites.push(pairing::ActiveInvite {
+                        invite_secret,
+                        created_at: std::time::Instant::now(),
+                        expires_at: std::time::Instant::now() + Duration::from_secs(ttl_secs),
+                        ticket_text: ticket_text.clone(),
+                    });
+                }
+
+                IpcResponse::ok(
+                    IPC_PROTOCOL_VERSION,
+                    request.id,
+                    serde_json::json!({"ticket": ticket_text, "ttl_secs": ttl_secs}),
+                )
+            }
+            methods::CANCEL_INVITE => {
+                let mut state = self.state.write().await;
+                state.active_invites.clear();
+                IpcResponse::ok(IPC_PROTOCOL_VERSION, request.id, serde_json::json!({}))
+            }
+            methods::JOIN_INVITE => {
+                let ticket = match request.params.get("ticket").and_then(|v| v.as_str()) {
+                    Some(t) => t,
+                    None => {
+                        return IpcResponse::err(
+                            IPC_PROTOCOL_VERSION,
+                            request.id,
+                            error_codes::INVALID_PARAMS,
+                            "expected string 'ticket'",
+                        )
+                    }
+                };
+                match pairing::join_pairing(&self.endpoint, &self.state, ticket).await {
+                    Ok((pairing_id, verification_string)) => IpcResponse::ok(
+                        IPC_PROTOCOL_VERSION,
+                        request.id,
+                        serde_json::json!({
+                            "pairing_id": pairing_id,
+                            "verification_string": verification_string,
+                        }),
+                    ),
+                    Err(e) => IpcResponse::err(
+                        IPC_PROTOCOL_VERSION,
+                        request.id,
+                        error_codes::PAIRING_FAILED,
+                        e.to_string(),
+                    ),
+                }
+            }
+            methods::CONFIRM_PAIRING => self.resolve_pairing_decision(&request, true).await,
+            methods::REJECT_PAIRING => self.resolve_pairing_decision(&request, false).await,
+            methods::UNPAIR_PEER => {
+                let peer_ident = match request.params.get("peer").and_then(|v| v.as_str()) {
+                    Some(p) => p,
+                    None => {
+                        return IpcResponse::err(
+                            IPC_PROTOCOL_VERSION,
+                            request.id,
+                            error_codes::INVALID_PARAMS,
+                            "expected string 'peer'",
+                        )
+                    }
+                };
+                let mut state = self.state.write().await;
+                let endpoint_id = match resolve_peer(&state.config.trusted_peers, peer_ident) {
+                    Ok(peer) => peer.endpoint_id.clone(),
+                    Err((code, message)) => {
+                        return IpcResponse::err(IPC_PROTOCOL_VERSION, request.id, code, message)
+                    }
+                };
+                // No persistent outgoing connection cache exists yet (spec §8.2 lands with
+                // Phase 4's connection manager), so there is nothing else to close here:
+                // removing trust already makes any future connection attempt from this peer
+                // fail authorization immediately.
+                peers::remove_trusted_peer(&mut state.config.trusted_peers, &endpoint_id);
+                if let Err(e) = state.config.save() {
+                    return IpcResponse::err(
+                        IPC_PROTOCOL_VERSION,
+                        request.id,
+                        error_codes::INTERNAL,
+                        e.to_string(),
+                    );
+                }
+                IpcResponse::ok(IPC_PROTOCOL_VERSION, request.id, serde_json::json!({}))
+            }
             methods::SEND_TEXT => {
                 let peer_ident = match request.params.get("peer").and_then(|v| v.as_str()) {
                     Some(p) => p,
@@ -224,30 +405,75 @@ impl RequestHandler for Dispatcher {
                     );
                 }
 
-                let mut state = self.state.write().await;
-                let endpoint_id = match resolve_peer(&state.config.trusted_peers, peer_ident) {
-                    Ok(peer) => peer.endpoint_id.clone(),
-                    Err((code, message)) => {
-                        return IpcResponse::err(IPC_PROTOCOL_VERSION, request.id, code, message)
+                let (endpoint_id, my_endpoint_id) = {
+                    let state = self.state.read().await;
+                    match resolve_peer(&state.config.trusted_peers, peer_ident) {
+                        Ok(peer) => (
+                            peer.endpoint_id.clone(),
+                            state.identity.endpoint_id().to_string(),
+                        ),
+                        Err((code, message)) => {
+                            return IpcResponse::err(
+                                IPC_PROTOCOL_VERSION,
+                                request.id,
+                                code,
+                                message,
+                            )
+                        }
+                    }
+                };
+                let public_key: iroh::PublicKey = match endpoint_id.parse() {
+                    Ok(k) => k,
+                    Err(_) => {
+                        return IpcResponse::err(
+                            IPC_PROTOCOL_VERSION,
+                            request.id,
+                            error_codes::INTERNAL,
+                            "stored endpoint id is corrupt",
+                        )
                     }
                 };
 
-                // Phase 2: no network transport yet (lands in Phase 4). Every resolved peer is
-                // therefore unreachable right now; record the attempt as failed rather than
-                // silently dropping it, so `pick`/`list_messages` show something real.
                 let message_id = Uuid::new_v4();
-                state.conversations.record_outgoing(
-                    &endpoint_id,
+                let result = transport::send_text(
+                    &self.endpoint,
+                    public_key.into(),
+                    &my_endpoint_id,
                     message_id,
-                    text.to_string(),
-                    MessageStatus::Failed,
-                );
-                IpcResponse::err(
-                    IPC_PROTOCOL_VERSION,
-                    request.id,
-                    error_codes::PEER_OFFLINE,
-                    "no network transport yet -- pairing/transport land in later phases",
+                    text,
                 )
+                .await;
+
+                let mut state = self.state.write().await;
+                match result {
+                    Ok(()) => {
+                        state.conversations.record_outgoing(
+                            &endpoint_id,
+                            message_id,
+                            text.to_string(),
+                            MessageStatus::Sent,
+                        );
+                        IpcResponse::ok(
+                            IPC_PROTOCOL_VERSION,
+                            request.id,
+                            serde_json::json!({"message_id": message_id}),
+                        )
+                    }
+                    Err(e) => {
+                        state.conversations.record_outgoing(
+                            &endpoint_id,
+                            message_id,
+                            text.to_string(),
+                            MessageStatus::Failed,
+                        );
+                        IpcResponse::err(
+                            IPC_PROTOCOL_VERSION,
+                            request.id,
+                            error_codes::PEER_OFFLINE,
+                            e.to_string(),
+                        )
+                    }
+                }
             }
             methods::GET_LATEST_INCOMING => {
                 let state = self.state.read().await;
@@ -318,6 +544,11 @@ impl RequestHandler for Dispatcher {
                     serde_json::Value::Array(messages),
                 )
             }
+            methods::SUBSCRIBE => {
+                let mut state = self.state.write().await;
+                state.add_subscriber(events);
+                IpcResponse::ok(IPC_PROTOCOL_VERSION, request.id, serde_json::json!({}))
+            }
             methods::SHUTDOWN => {
                 self.shutdown.notify_one();
                 IpcResponse::ok(
@@ -361,17 +592,26 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::load_or_create()?;
     let identity = lcp_core::identity::load_or_create(!config.trusted_peers.is_empty())?;
+    let endpoint = transport::bind_endpoint(identity.secret_key().clone()).await?;
     tracing::info!(
         endpoint_id = %short_id(&identity.endpoint_id().to_string()),
-        "identity loaded"
+        "identity loaded and endpoint bound"
     );
 
     let state: SharedState = Arc::new(RwLock::new(AppState::new(identity, config)));
     let shutdown = Arc::new(Notify::new());
     let handler = Arc::new(Dispatcher {
         state: state.clone(),
+        endpoint: endpoint.clone(),
         shutdown: shutdown.clone(),
     });
+
+    let router = iroh::protocol::Router::builder(endpoint.clone())
+        .accept(
+            lcp_protocol::ALPN,
+            Arc::new(transport::LcpProtocolHandler::new(state.clone())),
+        )
+        .spawn();
 
     #[cfg(unix)]
     let socket_path = {
@@ -413,6 +653,9 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("shutdown requested via ctrl-c");
         }
     }
+
+    drop(router);
+    endpoint.close().await;
 
     #[cfg(unix)]
     {

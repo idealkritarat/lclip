@@ -133,6 +133,24 @@ impl NetworkEnvelope {
     }
 }
 
+/// Reads a big-endian u32 length prefix off a network stream and validates it against
+/// [`MAX_WIRE_FRAME_BYTES`] before the caller reads that many more bytes. Pure/no I/O.
+pub fn decode_length_prefix(
+    header: [u8; FRAME_LENGTH_PREFIX_BYTES],
+) -> Result<usize, ProtocolError> {
+    let len = u32::from_be_bytes(header) as usize;
+    if len == 0 {
+        return Err(ProtocolError::EmptyFrame);
+    }
+    if len > MAX_WIRE_FRAME_BYTES {
+        return Err(ProtocolError::FrameTooLarge {
+            max: MAX_WIRE_FRAME_BYTES,
+            actual: len,
+        });
+    }
+    Ok(len)
+}
+
 /// Rejects text that is empty or exceeds [`MAX_TEXT_BYTES`]. Byte length, not char count --
 /// UTF-8 content is measured the same way the wire limit measures it.
 pub fn validate_text_len(text: &str) -> Result<(), ProtocolError> {

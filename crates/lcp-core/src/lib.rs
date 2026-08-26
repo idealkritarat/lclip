@@ -4,5 +4,7 @@ pub mod config;
 pub mod conversation;
 pub mod diagnostics;
 pub mod identity;
+pub mod pairing;
 pub mod peers;
 pub mod state;
+pub mod transport;

@@ -19,9 +19,25 @@ pub fn pipe_name(user_identifier: &str) -> String {
 /// Best-effort current-user identifier used both to scope the pipe name and (via the SID form)
 /// to build its ACL. Falls back to `USERNAME` if the SID lookup fails for any reason -- the
 /// pipe still ends up user-scoped by name even in that fallback case.
+///
+/// When `LCP_PROFILE_DIR` is set (the dev/test escape hatch for running multiple local
+/// "machines", see `lcp-core::config::app_dir`), a short suffix derived from it is appended so
+/// two profiles never collide on the same pipe name. The ACL itself is unaffected: both
+/// profiles are still the same real OS user, so the same SID-based access grant is correct for
+/// each independently.
 pub fn current_user_identifier() -> String {
-    current_user_sid()
-        .unwrap_or_else(|| std::env::var("USERNAME").unwrap_or_else(|_| "unknown-user".to_string()))
+    let base = current_user_sid().unwrap_or_else(|| {
+        std::env::var("USERNAME").unwrap_or_else(|_| "unknown-user".to_string())
+    });
+    match std::env::var("LCP_PROFILE_DIR") {
+        Ok(dir) => {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            dir.hash(&mut hasher);
+            format!("{base}-{:x}", hasher.finish())
+        }
+        Err(_) => base,
+    }
 }
 
 fn current_user_sid() -> Option<String> {

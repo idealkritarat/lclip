@@ -62,6 +62,24 @@ enum Command {
         #[arg(long)]
         incoming: bool,
     },
+    /// Create a pairing invite and wait for someone to pair (spec §7.4).
+    Invite {
+        /// Invite lifetime in seconds (clamped to 60-900).
+        #[arg(long, default_value_t = 300)]
+        ttl: u64,
+        /// Don't copy the ticket to the clipboard.
+        #[arg(long)]
+        no_copy: bool,
+    },
+    /// Pair with someone using a ticket they gave you (spec §7.5).
+    Pair { ticket: String },
+    /// Revoke trust in a paired peer (spec §7.8).
+    Unpair {
+        peer: String,
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Read or write local config.
     Config {
         #[command(subcommand)]
@@ -145,6 +163,9 @@ async fn main() {
         }
         Command::Fetch { peer } => commands::fetch::run(peer.as_deref(), cli.json).await,
         Command::Pick { peer, incoming } => commands::pick::run(peer.as_deref(), incoming).await,
+        Command::Invite { ttl, no_copy } => commands::invite::run(ttl, no_copy).await,
+        Command::Pair { ticket } => commands::pair::run(&ticket).await,
+        Command::Unpair { peer, yes } => commands::unpair::run(&peer, yes).await,
         Command::Config { action } => match action {
             ConfigAction::Get { key } => commands::config::get(&key, cli.json).await,
             ConfigAction::Set { key, value } => commands::config::set(&key, &value).await,

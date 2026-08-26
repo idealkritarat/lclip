@@ -112,8 +112,13 @@ fn default_device_name() -> String {
         .unwrap_or_else(|_| "My Device".to_string())
 }
 
-/// `~/Library/Application Support/lcp` on macOS, `%APPDATA%\lcp` on Windows.
+/// `~/Library/Application Support/lcp` on macOS, `%APPDATA%\lcp` on Windows. Overridable via
+/// `LCP_PROFILE_DIR` -- a dev/test-only escape hatch (not a documented user-facing setting) so
+/// multiple `lanclipd` "machines" can run under distinct identities on one dev box.
 pub fn app_dir() -> Result<PathBuf, ConfigError> {
+    if let Ok(dir) = std::env::var("LCP_PROFILE_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
     let base = directories::BaseDirs::new().ok_or(ConfigError::NoConfigDir)?;
     Ok(base.config_dir().join("lcp"))
 }
@@ -122,8 +127,12 @@ pub fn config_file_path() -> Result<PathBuf, ConfigError> {
     Ok(app_dir()?.join("config.json"))
 }
 
-/// `~/Library/Logs/lcp` on macOS, `%LOCALAPPDATA%\lcp\logs` on Windows.
+/// `~/Library/Logs/lcp` on macOS, `%LOCALAPPDATA%\lcp\logs` on Windows (or `LCP_PROFILE_DIR`,
+/// see [`app_dir`]).
 pub fn logs_dir() -> Result<PathBuf, ConfigError> {
+    if let Ok(dir) = std::env::var("LCP_PROFILE_DIR") {
+        return Ok(PathBuf::from(dir).join("logs"));
+    }
     let base = directories::BaseDirs::new().ok_or(ConfigError::NoConfigDir)?;
     if cfg!(target_os = "macos") {
         Ok(base.home_dir().join("Library").join("Logs").join("lcp"))

@@ -3,6 +3,13 @@ use lcp_protocol::IPC_PROTOCOL_VERSION;
 
 use crate::{daemon_conn, output, unwrap_response};
 
+/// Left-pads to `width`, but always leaves at least a 2-space gap even when `value` itself is
+/// longer than `width` -- a plain `{:<width$}` silently glues columns together in that case.
+fn pad(value: &str, width: usize) -> String {
+    let width = width.max(value.chars().count() + 2);
+    format!("{value:<width$}")
+}
+
 pub async fn run(json: bool) -> anyhow::Result<i32> {
     let client = daemon_conn::connect_or_autostart().await?;
     let resp = client
@@ -23,7 +30,12 @@ pub async fn run(json: bool) -> anyhow::Result<i32> {
                 println!("No paired peers yet. Run `lcp invite` on this machine, or `lcp pair <ticket>` with one a friend sent you.");
                 return Ok(output::exit_code::SUCCESS);
             }
-            println!("{:<10}{:<13}{:<12}PATH", "NAME", "DEVICE", "STATUS");
+            println!(
+                "{}{}{}PATH",
+                pad("NAME", 10),
+                pad("DEVICE", 13),
+                pad("STATUS", 12)
+            );
             for peer in peers {
                 let field = |name: &str| {
                     peer.get(name)
@@ -32,10 +44,10 @@ pub async fn run(json: bool) -> anyhow::Result<i32> {
                         .to_string()
                 };
                 println!(
-                    "{:<10}{:<13}{:<12}{}",
-                    field("alias"),
-                    field("device_name"),
-                    field("status"),
+                    "{}{}{}{}",
+                    pad(&field("alias"), 10),
+                    pad(&field("device_name"), 13),
+                    pad(&field("status"), 12),
                     field("path")
                 );
             }
