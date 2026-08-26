@@ -88,16 +88,27 @@ fn now_rfc3339() -> String {
     chrono::DateTime::<chrono::Utc>::from(SystemTime::now()).to_rfc3339()
 }
 
+/// Hard cap on pairing attempts against a single invite (spec §14.7 "limit pairing attempts
+/// per active invite"). The invite secret is 32 CSPRNG bytes so brute-forcing it is not a
+/// realistic threat; this bound exists so a misbehaving or hostile peer can't force unbounded
+/// verification-string derivations/events against one invite.
+pub const MAX_PAIRING_ATTEMPTS_PER_INVITE: u32 = 20;
+
 pub struct ActiveInvite {
     pub invite_secret: [u8; 32],
     pub created_at: Instant,
     pub expires_at: Instant,
     pub ticket_text: String,
+    pub attempts: u32,
 }
 
 impl ActiveInvite {
     pub fn is_expired(&self, now: Instant) -> bool {
         now >= self.expires_at
+    }
+
+    pub fn attempts_exhausted(&self) -> bool {
+        self.attempts >= MAX_PAIRING_ATTEMPTS_PER_INVITE
     }
 }
 
@@ -130,13 +141,25 @@ pub(crate) async fn handle_pair_request(
     mut recv: RecvStream,
 ) -> Result<(), TransportError> {
     let now = Instant::now();
-    let invite_ok = {
-        let state = state.read().await;
-        state.active_invites.iter().any(|inv| {
-            secrets_match(&inv.invite_secret, &req.invite_secret) && !inv.is_expired(now)
-        })
+    // Find, validate, and increment the attempt counter as one write-locked step so a burst of
+    // concurrent requests against the same invite can't race past the attempt limit.
+    let rejection: Option<&'static str> = {
+        let mut state = state.write().await;
+        match state
+            .active_invites
+            .iter_mut()
+            .find(|inv| secrets_match(&inv.invite_secret, &req.invite_secret))
+        {
+            None => Some("invalid_or_expired_invite"),
+            Some(inv) if inv.is_expired(now) => Some("invalid_or_expired_invite"),
+            Some(inv) if inv.attempts_exhausted() => Some("too_many_attempts"),
+            Some(inv) => {
+                inv.attempts += 1;
+                None
+            }
+        }
     };
-    if !invite_ok {
+    if let Some(error_code) = rejection {
         let decision = NetworkEnvelope::new(
             Uuid::new_v4(),
             NetworkBody::PairDecision(PairDecision {
@@ -144,13 +167,13 @@ pub(crate) async fn handle_pair_request(
                 inviter_nonce: [0u8; 32],
                 inviter_display_name: String::new(),
                 inviter_device_name: String::new(),
-                error_code: Some("invalid_or_expired_invite".into()),
+                error_code: Some(error_code.into()),
             }),
         );
         let _ = write_envelope(&mut send, &decision).await;
         let _ = send.finish();
         return Err(TransportError::msg(format!(
-            "pairing request with invalid/expired invite secret from {joiner_endpoint_id}"
+            "pairing request rejected ({error_code}) from {joiner_endpoint_id}"
         )));
     }
 

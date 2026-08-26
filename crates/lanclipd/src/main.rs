@@ -296,6 +296,7 @@ impl RequestHandler for Dispatcher {
                         created_at: std::time::Instant::now(),
                         expires_at: std::time::Instant::now() + Duration::from_secs(ttl_secs),
                         ticket_text: ticket_text.clone(),
+                        attempts: 0,
                     });
                 }
 
@@ -360,10 +361,9 @@ impl RequestHandler for Dispatcher {
                         return IpcResponse::err(IPC_PROTOCOL_VERSION, request.id, code, message)
                     }
                 };
-                // No persistent outgoing connection cache exists yet (spec §8.2 lands with
-                // Phase 4's connection manager), so there is nothing else to close here:
-                // removing trust already makes any future connection attempt from this peer
-                // fail authorization immediately.
+                // Revoke trust and close any active connection immediately (spec §7.8) --
+                // future connection attempts from this peer will also fail authorization.
+                state.peer_connections.close_and_forget(&endpoint_id);
                 peers::remove_trusted_peer(&mut state.config.trusted_peers, &endpoint_id);
                 if let Err(e) = state.config.save() {
                     return IpcResponse::err(
@@ -560,6 +560,10 @@ impl RequestHandler for Dispatcher {
                 let mut state = self.state.write().await;
                 state.add_subscriber(events);
                 IpcResponse::ok(IPC_PROTOCOL_VERSION, request.id, serde_json::json!({}))
+            }
+            methods::RUN_DIAGNOSTICS => {
+                let results = lcp_core::diagnostics::run_checks(&self.state, &self.endpoint).await;
+                IpcResponse::ok(IPC_PROTOCOL_VERSION, request.id, serde_json::json!(results))
             }
             methods::SHUTDOWN => {
                 self.shutdown.notify_one();

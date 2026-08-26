@@ -1,6 +1,7 @@
 pub mod config;
 pub mod copy;
 pub mod daemon;
+pub mod doctor;
 pub mod fetch;
 pub mod invite;
 pub mod pair;

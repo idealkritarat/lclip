@@ -72,6 +72,16 @@ impl ConnectionRegistry {
         entry.connection = Some(connection);
     }
 
+    /// Closes and forgets any cached connection to `endpoint_id` (spec §7.8: unpair must close
+    /// the active connection immediately, not just stop trusting future ones).
+    pub fn close_and_forget(&mut self, endpoint_id: &str) {
+        if let Some(state) = self.peers.remove(endpoint_id) {
+            if let Some(connection) = state.connection {
+                connection.close(0u32.into(), b"unpaired");
+            }
+        }
+    }
+
     pub fn mark_offline(&mut self, endpoint_id: &str) {
         let entry = self.peers.entry(endpoint_id.to_string()).or_default();
         entry.status = PeerStatus::Offline;

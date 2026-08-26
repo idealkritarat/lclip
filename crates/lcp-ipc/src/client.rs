@@ -84,7 +84,9 @@ async fn run<S>(
                     let _ = event_tx.send(event);
                 }
                 Err(e) => {
-                    tracing::debug!(error = %e, "malformed frame from daemon, ignoring");
+                    // Never log serde_json's rendered error here either -- a response frame
+                    // can carry message text (spec §14.6). See the matching note in server.rs.
+                    tracing::debug!(error_kind = ?e.classify(), "malformed frame from daemon, ignoring");
                 }
             }
         }

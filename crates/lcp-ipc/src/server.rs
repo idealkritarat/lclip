@@ -58,7 +58,10 @@ where
         let request: IpcRequest = match serde_json::from_slice(&bytes) {
             Ok(r) => r,
             Err(e) => {
-                tracing::debug!(error = %e, "malformed IPC request, closing connection");
+                // Never log serde_json's rendered error: it can echo a fragment of the
+                // offending JSON, which for a request may be clipboard/message text (spec
+                // §14.6). `classify()` is a category enum with no payload content.
+                tracing::debug!(error_kind = ?e.classify(), "malformed IPC request, closing connection");
                 break;
             }
         };

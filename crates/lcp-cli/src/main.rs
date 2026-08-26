@@ -90,6 +90,8 @@ enum Command {
         #[command(subcommand)]
         action: DaemonAction,
     },
+    /// Check daemon health, identity, connectivity, and config.
+    Doctor,
 }
 
 #[derive(Subcommand)]
@@ -179,6 +181,7 @@ async fn main() {
             DaemonAction::Install => commands::daemon::install().await,
             DaemonAction::Uninstall => commands::daemon::uninstall().await,
         },
+        Command::Doctor => commands::doctor::run(cli.json).await,
     };
 
     match code {
