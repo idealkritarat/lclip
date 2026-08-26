@@ -1,0 +1,25 @@
+/target/
+**/target/
+Cargo.lock.bak
+
+# macOS
+.DS_Store
+macos/LCPMenuBar/**/xcuserdata/
+macos/LCPMenuBar/**/*.xcuserstate
+macos/LCPMenuBar/build/
+macos/LCPMenuBar/DerivedData/
+
+# Windows
+Thumbs.db
+*.pdb
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Local overrides / scratch
+*.local.toml
+
+# Claude Code harness-local state
+.claude/

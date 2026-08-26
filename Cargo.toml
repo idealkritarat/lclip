@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/lcp-protocol",
+    "crates/lcp-core",
+    "crates/lcp-ipc",
+    "crates/lanclipd",
+    "crates/lcp-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.dev]
+debug = 1

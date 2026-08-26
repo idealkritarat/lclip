@@ -1,0 +1,27 @@
+[package]
+name = "lcp-ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lcp-protocol = { path = "../lcp-protocol" }
+tokio = { version = "1", features = ["net", "io-util", "sync", "rt", "time", "macros"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "2"
+tracing = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+] }
+
+[target.'cfg(unix)'.dependencies]
+directories = "6"
