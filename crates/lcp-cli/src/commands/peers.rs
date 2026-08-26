@@ -41,8 +41,8 @@ pub async fn run(json: bool) -> anyhow::Result<i32> {
             }
             Ok(output::exit_code::SUCCESS)
         }
-        Err(message) => {
-            eprintln!("Error: {message}");
+        Err(err) => {
+            eprintln!("Error: {}", err.message);
             Ok(output::exit_code::GENERAL_ERROR)
         }
     }

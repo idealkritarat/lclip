@@ -18,6 +18,7 @@ lcp-ipc = { path = "../lcp-ipc" }
 lcp-protocol = { path = "../lcp-protocol" }
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"

@@ -21,8 +21,8 @@ pub async fn get(key: &str, json: bool) -> anyhow::Result<i32> {
             }
             Ok(output::exit_code::SUCCESS)
         }
-        Err(message) => {
-            eprintln!("Error: {message}");
+        Err(err) => {
+            eprintln!("Error: {}", err.message);
             Ok(output::exit_code::INVALID_ARGS)
         }
     }
@@ -42,8 +42,8 @@ pub async fn set(key: &str, value: &str) -> anyhow::Result<i32> {
             println!("{key} = {value}");
             Ok(output::exit_code::SUCCESS)
         }
-        Err(message) => {
-            eprintln!("Error: {message}");
+        Err(err) => {
+            eprintln!("Error: {}", err.message);
             Ok(output::exit_code::INVALID_ARGS)
         }
     }
@@ -75,8 +75,8 @@ pub async fn list(json: bool) -> anyhow::Result<i32> {
             }
             Ok(output::exit_code::SUCCESS)
         }
-        Err(message) => {
-            eprintln!("Error: {message}");
+        Err(err) => {
+            eprintln!("Error: {}", err.message);
             Ok(output::exit_code::GENERAL_ERROR)
         }
     }

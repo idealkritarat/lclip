@@ -1,10 +1,12 @@
 mod autostart;
+mod clipboard;
 mod commands;
 mod daemon_conn;
 mod output;
+mod picker;
 
 use clap::{Parser, Subcommand};
-use lcp_protocol::ipc::IpcResponse;
+use lcp_protocol::ipc::{IpcError, IpcResponse};
 
 #[derive(Parser)]
 #[command(
@@ -31,6 +33,35 @@ enum Command {
     Status,
     /// List trusted peers and their connection status.
     Peers,
+    /// Send the current clipboard (or --stdin/--text) to a paired peer.
+    Send {
+        peer: String,
+        /// Read the message from stdin (EOF-terminated) instead of the clipboard.
+        #[arg(long, conflicts_with = "text")]
+        stdin: bool,
+        /// Use this exact text instead of the clipboard.
+        #[arg(long, conflicts_with = "stdin")]
+        text: Option<String>,
+    },
+    /// Copy the latest incoming message (from `peer`, or from anyone) into the clipboard.
+    Copy {
+        peer: Option<String>,
+        /// Open the interactive picker instead (alias for `lcp pick`).
+        #[arg(short = 'l', long = "list")]
+        list: bool,
+        /// With --list, only show incoming messages.
+        #[arg(long)]
+        incoming: bool,
+    },
+    /// Print the latest incoming message (from `peer`, or from anyone) to stdout.
+    Fetch { peer: Option<String> },
+    /// Interactively choose a message to copy.
+    Pick {
+        peer: Option<String>,
+        /// Only show incoming messages.
+        #[arg(long)]
+        incoming: bool,
+    },
     /// Read or write local config.
     Config {
         #[command(subcommand)]
@@ -60,16 +91,34 @@ enum DaemonAction {
     Uninstall,
 }
 
-/// Unwraps an `IpcResponse` into its result value, or a plain error message string.
-pub fn unwrap_response(response: IpcResponse) -> Result<serde_json::Value, String> {
+/// Unwraps an `IpcResponse` into its result value, or the structured `IpcError` so callers can
+/// match on `.code` to pick the right exit code rather than parsing a flattened string.
+pub fn unwrap_response(response: IpcResponse) -> Result<serde_json::Value, IpcError> {
     if response.ok {
         Ok(response.result.unwrap_or(serde_json::Value::Null))
     } else {
-        let message = response
-            .error
-            .map(|e| format!("[{}] {}", e.code, e.message))
-            .unwrap_or_else(|| "unknown error".to_string());
-        Err(message)
+        Err(response.error.unwrap_or_else(|| IpcError {
+            code: lcp_protocol::ipc::error_codes::INTERNAL.to_string(),
+            message: "unknown error".to_string(),
+        }))
+    }
+}
+
+/// Maps an `IpcError.code` to its spec §11.13 exit code, falling back to a general error.
+pub fn exit_code_for(error: &IpcError) -> i32 {
+    use lcp_protocol::ipc::error_codes;
+    match error.code.as_str() {
+        c if c == error_codes::PEER_NOT_FOUND || c == error_codes::PEER_AMBIGUOUS => {
+            output::exit_code::PEER_NOT_FOUND
+        }
+        c if c == error_codes::PEER_OFFLINE => output::exit_code::PEER_OFFLINE,
+        c if c == error_codes::NO_MESSAGE => output::exit_code::NO_MESSAGE,
+        c if c == error_codes::PAIRING_FAILED => output::exit_code::PAIRING_FAILURE,
+        c if c == error_codes::LIMIT_EXCEEDED => output::exit_code::LIMIT_EXCEEDED,
+        c if c == error_codes::VERSION_MISMATCH => output::exit_code::VERSION_MISMATCH,
+        c if c == error_codes::CREDENTIAL_STORE_FAILURE => output::exit_code::PERMISSION_FAILURE,
+        c if c == error_codes::INVALID_PARAMS => output::exit_code::INVALID_ARGS,
+        _ => output::exit_code::GENERAL_ERROR,
     }
 }
 
@@ -80,6 +129,22 @@ async fn main() {
     let code = match cli.command {
         Command::Status => commands::status::run(cli.json).await,
         Command::Peers => commands::peers::run(cli.json).await,
+        Command::Send { peer, stdin, text } => {
+            commands::send::run(&peer, stdin, text.as_deref()).await
+        }
+        Command::Copy {
+            peer,
+            list,
+            incoming,
+        } => {
+            if list {
+                commands::pick::run(peer.as_deref(), incoming).await
+            } else {
+                commands::copy::run(peer.as_deref()).await
+            }
+        }
+        Command::Fetch { peer } => commands::fetch::run(peer.as_deref(), cli.json).await,
+        Command::Pick { peer, incoming } => commands::pick::run(peer.as_deref(), incoming).await,
         Command::Config { action } => match action {
             ConfigAction::Get { key } => commands::config::get(&key, cli.json).await,
             ConfigAction::Set { key, value } => commands::config::set(&key, &value).await,

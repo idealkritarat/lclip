@@ -6,19 +6,23 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 
 use crate::config::Config;
+use crate::conversation::ConversationStore;
 use crate::identity::LocalIdentity;
 
 pub struct AppState {
     pub identity: LocalIdentity,
     pub config: Config,
+    pub conversations: ConversationStore,
     pub started_at: Instant,
 }
 
 impl AppState {
     pub fn new(identity: LocalIdentity, config: Config) -> Self {
+        let history_limit = config.history.limit_per_peer as usize;
         Self {
             identity,
             config,
+            conversations: ConversationStore::new(history_limit),
             started_at: Instant::now(),
         }
     }

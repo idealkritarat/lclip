@@ -20,9 +20,9 @@ pub async fn run(json: bool) -> anyhow::Result<i32> {
         .await?;
     let value = match unwrap_response(resp) {
         Ok(value) => value,
-        Err(message) => {
-            eprintln!("Error: {message}");
-            return Ok(output::exit_code::GENERAL_ERROR);
+        Err(err) => {
+            eprintln!("Error: {}", err.message);
+            return Ok(crate::exit_code_for(&err));
         }
     };
 

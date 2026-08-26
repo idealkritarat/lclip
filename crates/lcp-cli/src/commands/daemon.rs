@@ -16,8 +16,11 @@ pub async fn status() -> anyhow::Result<i32> {
                     println!("lanclipd is running.");
                     Ok(output::exit_code::SUCCESS)
                 }
-                Err(message) => {
-                    println!("lanclipd is reachable but not responding correctly: {message}");
+                Err(err) => {
+                    println!(
+                        "lanclipd is reachable but not responding correctly: {}",
+                        err.message
+                    );
                     Ok(output::exit_code::DAEMON_UNAVAILABLE)
                 }
             }
