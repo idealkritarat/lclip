@@ -10,10 +10,10 @@ All transport encryption, key exchange, and NAT traversal come from Iroh's authe
 
 | Operation | Crate | Notes |
 |---|---|---|
-| CSPRNG for invite secrets/nonces | `rand` (`OsRng`) | 32-byte invite secrets |
+| CSPRNG for invite secrets/nonces | `getrandom` | 32-byte invite secrets and pairing nonces |
 | Constant-time secret comparison | `subtle` | invite-secret verification |
 | Verification-string derivation | `blake3` (keyed hash) | never used as an encryption key |
-| Secret buffer zeroing | `zeroize` | identity secret bytes, invite secrets in memory |
+| Secret buffer zeroing | `zeroize` | identity secret bytes |
 
 ## Authorization
 
@@ -48,8 +48,14 @@ Hard frame/message size limits (network and IPC), connection/stream timeouts, a 
 | `keyring` | OS credential store access for the identity secret key |
 | `tokio` (`net::UnixListener`/`windows::named_pipe`) | Local IPC transport |
 | `windows-sys` | Building a current-user-only security descriptor for the Windows named pipe |
-| `rand`, `subtle`, `blake3`, `zeroize` | Invite-secret generation/comparison, verification-string derivation, secret zeroing |
+| `getrandom`, `subtle`, `blake3`, `zeroize` | Invite-secret/nonce generation, constant-time comparison, verification-string derivation, secret zeroing |
 
 ## Pre-release review gate (spec §14.8)
 
-Run `cargo audit`; review every `unsafe` block with a goal of zero application-authored `unsafe`; fuzz or targeted-test the ticket parser and frame decoder against malformed/oversized input; test an unauthorized `EndpointId` being rejected; test an expired and a reused invite both failing; grep logs/config for accidental secret or message-content leakage.
+Status as of the last review (Phase 5):
+
+- **`cargo audit`**: 0 vulnerabilities. 2 "unmaintained crate" advisories (not vulnerabilities), both from crates we don't depend on directly: `atomic-polyfill` (via `postcard` → `heapless`, a no_std buffer helper) and `paste` (via `iroh` → `netwatch`/`netdev`'s Linux netlink support, a platform outside this project's scope). Neither is on a code path this project exercises on macOS/Windows. Re-run `cargo audit` before each release; if either gets fixed upstream or becomes an actual vulnerability, re-evaluate.
+- **`unsafe` blocks**: exactly 3, all in `lcp-ipc/src/windows.rs`, all for the one thing that has no safe API: building the Windows named pipe's current-user-only security descriptor (`ConvertStringSecurityDescriptorToSecurityDescriptorW`, freeing it via `LocalFree` in a `Drop` guard, and passing it to tokio's `create_with_security_attributes_raw`). No other crate in this workspace has any `unsafe` code.
+- **Log privacy**: every `tracing::` call site reviewed by hand. Two used a `serde_json` parse error's `Display` text on frames that can carry message/clipboard content (an incoming IPC request, and a response read back from the daemon) -- `serde_json` errors can echo a fragment of the offending JSON, so both now log only `e.classify()` (a contentless category enum) instead. Everything else only ever logged non-secret data (truncated endpoint id prefixes, paths, protocol-error categories, `io::Error`/`ConnectionError` descriptions).
+- **Malformed/oversized input**: covered by unit tests in `lcp-protocol` (network envelope, IPC frame, and ticket decoders all reject empty/oversized/malformed/unknown-version input before allocating past the limit).
+- **Not yet done**: dedicated fuzzing (spec says "if practical"; the same decoders are unit-tested against the same failure classes a fuzzer would find, which covers the same risk pragmatically without a fuzz harness). Re-review this list before actually shipping a release, not just once here.

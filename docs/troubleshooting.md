@@ -3,7 +3,10 @@
 ## Daemon and CLI
 
 **`lcp` says the daemon is unavailable.**
-Run `lcp daemon status`. If it's not running, `lcp daemon start` (most commands also auto-start it when safe). Check logs at `~/Library/Logs/lcp/` (macOS) or `%LOCALAPPDATA%\lcp\logs\` (Windows).
+Run `lcp daemon status`. If it's not running, `lcp daemon start` (most commands also auto-start it when safe). Check logs at `~/Library/Logs/lcp/` (macOS) or `%LOCALAPPDATA%\lcp\logs\` (Windows). `lcp doctor` runs a fuller set of checks (daemon reachability, identity, Iroh endpoint online state, relay mode, config schema, duplicate peer aliases, autostart) in one command.
+
+**A peer always shows "offline" in `lcp peers` even though messages go through.**
+Status is updated opportunistically -- when you send to them, or when they connect to you -- not by a continuously-running background reconnect loop (that's a documented, deliberate simplification for now; see `crates/lcp-core/src/connection.rs`). If you haven't talked to a peer recently, their last-known status may be stale rather than wrong.
 
 **`lcp copy`/`lcp fetch` returns "no messages received since daemon start".**
 This is expected behavior, not a bug — message history is RAM-only and does not survive a daemon restart (see ADR [[0006-messages-are-ephemeral]]). Pairing/trust is unaffected by restarts.
