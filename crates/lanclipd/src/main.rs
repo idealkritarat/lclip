@@ -135,6 +135,15 @@ impl RequestHandler for Dispatcher {
             ),
             methods::GET_STATUS => {
                 let state = self.state.read().await;
+                let online_peer_count = state
+                    .config
+                    .trusted_peers
+                    .iter()
+                    .filter(|p| {
+                        state.peer_connections.status_of(&p.endpoint_id).0
+                            == lcp_core::connection::PeerStatus::Online
+                    })
+                    .count();
                 IpcResponse::ok(
                     IPC_PROTOCOL_VERSION,
                     request.id,
@@ -146,7 +155,7 @@ impl RequestHandler for Dispatcher {
                         "endpoint_id_prefix": short_id(&state.identity.endpoint_id().to_string()),
                         "relay_mode": state.config.network.relay_mode,
                         "trusted_peer_count": state.config.trusted_peers.len(),
-                        "online_peer_count": 0,
+                        "online_peer_count": online_peer_count,
                         "history_memory_only": true,
                         "autostart": state.config.daemon.autostart,
                     }),
@@ -222,12 +231,13 @@ impl RequestHandler for Dispatcher {
                     .trusted_peers
                     .iter()
                     .map(|p| {
+                        let (status, path) = state.peer_connections.status_of(&p.endpoint_id);
                         serde_json::json!({
                             "endpoint_id": p.endpoint_id,
                             "alias": p.alias,
                             "device_name": p.device_name,
-                            "status": "offline",
-                            "path": "-",
+                            "status": status,
+                            "path": path,
                         })
                     })
                     .collect();
@@ -436,8 +446,10 @@ impl RequestHandler for Dispatcher {
 
                 let message_id = Uuid::new_v4();
                 let result = transport::send_text(
+                    &self.state,
                     &self.endpoint,
                     public_key.into(),
+                    &endpoint_id,
                     &my_endpoint_id,
                     message_id,
                     text,

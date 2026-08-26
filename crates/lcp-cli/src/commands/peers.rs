@@ -43,12 +43,18 @@ pub async fn run(json: bool) -> anyhow::Result<i32> {
                         .unwrap_or("-")
                         .to_string()
                 };
+                let path = field("path");
+                let path = if path == "unknown" {
+                    "-".to_string()
+                } else {
+                    path
+                };
                 println!(
                     "{}{}{}{}",
                     pad(&field("alias"), 10),
                     pad(&field("device_name"), 13),
                     pad(&field("status"), 12),
-                    field("path")
+                    path
                 );
             }
             Ok(output::exit_code::SUCCESS)

@@ -1,7 +1,9 @@
 //! Iroh endpoint binding, the ALPN protocol handler, and incoming text-message handling
-//! (spec §8). Outgoing pairing network I/O lives in `pairing.rs`; the connection cache and
-//! reconnect/backoff policy for general outgoing sends (spec §8.2, §8.10) are a later phase --
-//! this phase dials a fresh connection per send, which is correct, just not yet optimized.
+//! (spec §8). Outgoing pairing network I/O lives in `pairing.rs`; connection caching and
+//! status live in `connection.rs`. The proactive background reconnect loop with the full
+//! backoff schedule (spec §8.10) is not implemented yet -- status/caching today are
+//! opportunistic (updated on send attempts and incoming connections), not continuously
+//! maintained in the background.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -112,6 +114,36 @@ impl std::fmt::Debug for LcpProtocolHandler {
 impl ProtocolHandler for LcpProtocolHandler {
     async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
         let remote_id = connection.remote_id().to_string();
+
+        let (my_id, is_trusted) = {
+            let state = self.state.read().await;
+            (
+                state.identity.endpoint_id().to_string(),
+                state
+                    .config
+                    .trusted_peers
+                    .iter()
+                    .any(|p| p.endpoint_id == remote_id),
+            )
+        };
+        if is_trusted {
+            let mut state = self.state.write().await;
+            if state
+                .peer_connections
+                .should_keep_inbound(&my_id, &remote_id)
+            {
+                state
+                    .peer_connections
+                    .mark_online(&remote_id, connection.clone());
+            } else {
+                // Our own outbound connection to this peer wins the tie-break (spec §8.2);
+                // this duplicate inbound one is closed rather than left to linger.
+                drop(state);
+                connection.close(0u32.into(), b"duplicate connection");
+                return Ok(());
+            }
+        }
+
         loop {
             let (send, recv) = match connection.accept_bi().await {
                 Ok(pair) => pair,
@@ -255,20 +287,70 @@ pub enum SendTextError {
     Rejected(String),
 }
 
-/// Dials `endpoint_addr` fresh, sends one text message, and waits for the ACK. No connection
-/// reuse or reconnect/backoff yet (spec §8.2/§8.10 land with the connection cache in a later
-/// phase) -- correct today, just not optimized for repeated sends to the same peer.
+/// Reuses a cached still-open connection to `remote_endpoint_id` if one exists (spec §8.2),
+/// otherwise dials fresh; sends one text message and waits for the ACK. On any failure the
+/// peer is marked offline in the registry; on a fresh successful connect it's marked online.
+#[allow(clippy::too_many_arguments)]
 pub async fn send_text(
+    state: &SharedState,
     endpoint: &iroh::Endpoint,
     endpoint_addr: iroh::EndpointAddr,
+    remote_endpoint_id: &str,
     my_endpoint_id: &str,
     message_id: Uuid,
     text: &str,
 ) -> Result<(), SendTextError> {
-    let connection = tokio::time::timeout(CONNECT_TIMEOUT, endpoint.connect(endpoint_addr, ALPN))
+    let result = send_text_inner(
+        state,
+        endpoint,
+        endpoint_addr,
+        remote_endpoint_id,
+        my_endpoint_id,
+        message_id,
+        text,
+    )
+    .await;
+    if result.is_err() {
+        state
+            .write()
+            .await
+            .peer_connections
+            .mark_offline(remote_endpoint_id);
+    }
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn send_text_inner(
+    state: &SharedState,
+    endpoint: &iroh::Endpoint,
+    endpoint_addr: iroh::EndpointAddr,
+    remote_endpoint_id: &str,
+    my_endpoint_id: &str,
+    message_id: Uuid,
+    text: &str,
+) -> Result<(), SendTextError> {
+    let cached = state
+        .read()
         .await
-        .map_err(|_| SendTextError::Connect("timed out".into()))?
-        .map_err(|e| SendTextError::Connect(e.to_string()))?;
+        .peer_connections
+        .cached_connection(remote_endpoint_id);
+    let connection = match cached {
+        Some(connection) => connection,
+        None => {
+            let connection =
+                tokio::time::timeout(CONNECT_TIMEOUT, endpoint.connect(endpoint_addr, ALPN))
+                    .await
+                    .map_err(|_| SendTextError::Connect("timed out".into()))?
+                    .map_err(|e| SendTextError::Connect(e.to_string()))?;
+            state
+                .write()
+                .await
+                .peer_connections
+                .mark_online(remote_endpoint_id, connection.clone());
+            connection
+        }
+    };
 
     let (mut send, mut recv) = connection
         .open_bi()

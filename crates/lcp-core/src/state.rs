@@ -11,6 +11,7 @@ use lcp_protocol::ipc::IpcEvent;
 use lcp_protocol::IPC_PROTOCOL_VERSION;
 
 use crate::config::Config;
+use crate::connection::ConnectionRegistry;
 use crate::conversation::ConversationStore;
 use crate::identity::LocalIdentity;
 use crate::pairing::{ActiveInvite, PendingPairing};
@@ -19,6 +20,7 @@ pub struct AppState {
     pub identity: LocalIdentity,
     pub config: Config,
     pub conversations: ConversationStore,
+    pub peer_connections: ConnectionRegistry,
     pub active_invites: Vec<ActiveInvite>,
     pub pending_pairings: std::collections::HashMap<Uuid, PendingPairing>,
     subscribers: Vec<UnboundedSender<IpcEvent>>,
@@ -32,6 +34,7 @@ impl AppState {
             identity,
             config,
             conversations: ConversationStore::new(history_limit),
+            peer_connections: ConnectionRegistry::default(),
             active_invites: Vec::new(),
             pending_pairings: std::collections::HashMap::new(),
             subscribers: Vec::new(),
