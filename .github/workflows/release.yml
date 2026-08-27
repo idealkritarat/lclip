@@ -7,18 +7,26 @@ on:
 
 jobs:
   package:
-    name: Package (${{ matrix.os }})
+    name: Package (${{ matrix.asset }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
+            asset: windows-x86_64
             command: pwsh ./scripts/package-windows.ps1
             artifacts: |
               dist/lcp-windows-x86_64.zip
               dist/lcp-windows-x86_64.zip.sha256
+          - os: macos-13
+            asset: macos-x86_64
+            command: ./scripts/package-macos.sh
+            artifacts: |
+              dist/lcp-macos-*.tar.gz
+              dist/lcp-macos-*.tar.gz.sha256
           - os: macos-latest
+            asset: macos-arm64
             command: ./scripts/package-macos.sh
             artifacts: |
               dist/lcp-macos-*.tar.gz
@@ -30,7 +38,7 @@ jobs:
       - run: ${{ matrix.command }}
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.os }}
+          name: release-${{ matrix.asset }}
           path: ${{ matrix.artifacts }}
 
   publish:
