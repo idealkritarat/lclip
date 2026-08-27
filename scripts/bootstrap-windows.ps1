@@ -14,7 +14,12 @@ function Invoke-Download {
 }
 
 function Install-FromRelease {
-    $Release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
+    try {
+        $Release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
+    } catch {
+        return $false
+    }
+
     $Asset = $Release.assets | Where-Object { $_.name -eq "lcp-windows-x86_64.zip" } | Select-Object -First 1
     if (-not $Asset) {
         return $false
