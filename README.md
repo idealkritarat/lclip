@@ -19,9 +19,9 @@ See [LCP-Agentic-Implementation-Spec.md](LCP-Agentic-Implementation-Spec.md) for
 
 ## Status
 
-The cross-platform Rust core (Phases 0-5 of the spec: workspace, daemon/IPC, in-memory messaging, real Iroh pairing and messaging, connection reuse and status, security/reliability hardening) is implemented and covered by 57 automated tests, and has been verified end-to-end with two live local daemons actually pairing and exchanging messages over a real Iroh connection (see `docs/adr/` for the architectural decisions behind it).
+The cross-platform Rust core (Phases 0-5 of the spec: workspace, daemon/IPC, in-memory messaging, real Iroh pairing and messaging, connection reuse and status, security/reliability hardening) is implemented and covered by 57 automated tests. It has been verified end-to-end with two live local daemons actually pairing and exchanging messages over a real Iroh connection.
 
-The native macOS menu bar UI (Phase 6) and release packaging (Phase 7) are in progress. Both are being developed from a Windows-only environment, so anything macOS-specific (the menu bar app itself, the LaunchAgent autostart path, `unix.rs`'s socket transport) is written to spec but has not been compiled or run on real macOS/Xcode -- it needs verification there before being relied on.
+Phase 6 now has a native macOS menu bar app source tree in `macos/LCPMenuBar/`. Phase 7 has per-user install/uninstall scripts, packaging scripts, checksums, and CI configuration. macOS-specific pieces were authored from a Windows environment and still need real macOS/Xcode verification before release.
 
 ## Building from source
 
@@ -35,6 +35,76 @@ cargo test --workspace
 On Windows, building `x86_64-pc-windows-msvc` (the default) requires the MSVC C++ build tools (Visual Studio Build Tools with the "Desktop development with C++" workload). See `docs/troubleshooting.md` if you hit a linker error.
 
 Binaries: `lanclipd` (background daemon), `lcp` (CLI). The macOS menu bar app lives in `macos/LCPMenuBar/` and is built separately with Xcode.
+
+Build the macOS menu bar app on macOS:
+
+```bash
+xcodebuild \
+  -project macos/LCPMenuBar/LCPMenuBar.xcodeproj \
+  -scheme LCPMenuBar \
+  -configuration Release \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+## Install
+
+Windows, per user:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
+```
+
+macOS, per user:
+
+```bash
+./scripts/install-macos.sh
+```
+
+Both scripts build release binaries, copy `lcp` and `lanclipd` to a user-writable location, enable daemon autostart, and start the daemon. Uninstall removes autostart and installed binaries but leaves identity/config intact:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-windows.ps1
+```
+
+```bash
+./scripts/uninstall-macos.sh
+```
+
+## First Use
+
+On machine A:
+
+```bash
+lcp invite
+```
+
+Send the printed ticket to machine B, then on machine B:
+
+```bash
+lcp pair <ticket>
+```
+
+After both sides confirm the same verification code:
+
+```bash
+lcp peers
+lcp send <peer-alias>
+lcp copy <peer-alias>
+```
+
+On Windows, allow the firewall prompt for `lanclipd` if it appears.
+
+## Packaging
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
+```
+
+```bash
+./scripts/package-macos.sh
+```
+
+Artifacts are written to `dist/` with `.sha256` checksum files.
 
 ## Repository layout
 

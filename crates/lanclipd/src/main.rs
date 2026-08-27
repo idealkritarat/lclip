@@ -445,6 +445,20 @@ impl RequestHandler for Dispatcher {
                 };
 
                 let message_id = Uuid::new_v4();
+                {
+                    let mut state = self.state.write().await;
+                    let message = state.conversations.record_outgoing(
+                        &endpoint_id,
+                        message_id,
+                        text.to_string(),
+                        MessageStatus::Sending,
+                    );
+                    state.broadcast_event(
+                        lcp_protocol::ipc::events::MESSAGE_UPDATED,
+                        serde_json::json!({"message": message_json(&message)}),
+                    );
+                }
+
                 let result = transport::send_text(
                     &self.state,
                     &self.endpoint,
@@ -459,12 +473,21 @@ impl RequestHandler for Dispatcher {
                 let mut state = self.state.write().await;
                 match result {
                     Ok(()) => {
-                        state.conversations.record_outgoing(
+                        state.conversations.update_outgoing_status(
                             &endpoint_id,
                             message_id,
-                            text.to_string(),
                             MessageStatus::Sent,
                         );
+                        let payload = state
+                            .conversations
+                            .message_for(&endpoint_id, message_id)
+                            .map(|message| serde_json::json!({"message": message_json(message)}));
+                        if let Some(payload) = payload {
+                            state.broadcast_event(
+                                lcp_protocol::ipc::events::MESSAGE_UPDATED,
+                                payload,
+                            );
+                        }
                         IpcResponse::ok(
                             IPC_PROTOCOL_VERSION,
                             request.id,
@@ -472,12 +495,21 @@ impl RequestHandler for Dispatcher {
                         )
                     }
                     Err(e) => {
-                        state.conversations.record_outgoing(
+                        state.conversations.update_outgoing_status(
                             &endpoint_id,
                             message_id,
-                            text.to_string(),
                             MessageStatus::Failed,
                         );
+                        let payload = state
+                            .conversations
+                            .message_for(&endpoint_id, message_id)
+                            .map(|message| serde_json::json!({"message": message_json(message)}));
+                        if let Some(payload) = payload {
+                            state.broadcast_event(
+                                lcp_protocol::ipc::events::MESSAGE_UPDATED,
+                                payload,
+                            );
+                        }
                         IpcResponse::err(
                             IPC_PROTOCOL_VERSION,
                             request.id,

@@ -19,7 +19,7 @@ use lcp_protocol::network::{
 use lcp_protocol::ALPN;
 
 use crate::conversation::RecordOutcome;
-use crate::state::SharedState;
+use crate::state::{AppState, SharedState};
 
 /// Errors from network I/O and the pairing exchange. A handful of `#[from]` conversions cover
 /// the common cases; everything else that just needs a human-readable message (a rejected
@@ -64,6 +64,21 @@ pub async fn bind_endpoint(secret_key: iroh::SecretKey) -> Result<iroh::Endpoint
         .bind()
         .await?;
     Ok(endpoint)
+}
+
+/// Broadcasts the peer's current status/path to IPC subscribers (spec §13.5's realtime friend
+/// list) right after a status-changing call into `peer_connections`. Callers already hold the
+/// write lock this needs, so it just borrows it rather than re-acquiring.
+fn broadcast_peer_status(state: &mut AppState, endpoint_id: &str) {
+    let (status, path) = state.peer_connections.status_of(endpoint_id);
+    state.broadcast_event(
+        events::PEER_UPDATED,
+        serde_json::json!({
+            "endpoint_id": endpoint_id,
+            "status": status,
+            "path": path,
+        }),
+    );
 }
 
 pub(crate) fn now_unix_ms() -> i64 {
@@ -135,6 +150,7 @@ impl ProtocolHandler for LcpProtocolHandler {
                 state
                     .peer_connections
                     .mark_online(&remote_id, connection.clone());
+                broadcast_peer_status(&mut state, &remote_id);
             } else {
                 // Our own outbound connection to this peer wins the tie-break (spec §8.2);
                 // this duplicate inbound one is closed rather than left to linger.
@@ -311,11 +327,9 @@ pub async fn send_text(
     )
     .await;
     if result.is_err() {
-        state
-            .write()
-            .await
-            .peer_connections
-            .mark_offline(remote_endpoint_id);
+        let mut state = state.write().await;
+        state.peer_connections.mark_offline(remote_endpoint_id);
+        broadcast_peer_status(&mut state, remote_endpoint_id);
     }
     result
 }
@@ -343,11 +357,13 @@ async fn send_text_inner(
                     .await
                     .map_err(|_| SendTextError::Connect("timed out".into()))?
                     .map_err(|e| SendTextError::Connect(e.to_string()))?;
-            state
-                .write()
-                .await
-                .peer_connections
-                .mark_online(remote_endpoint_id, connection.clone());
+            {
+                let mut state = state.write().await;
+                state
+                    .peer_connections
+                    .mark_online(remote_endpoint_id, connection.clone());
+                broadcast_peer_status(&mut state, remote_endpoint_id);
+            }
             connection
         }
     };
