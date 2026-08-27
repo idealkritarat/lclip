@@ -224,6 +224,29 @@ impl RequestHandler for Dispatcher {
                     ),
                 }
             }
+            methods::RESET_CONFIG => {
+                let mut state = self.state.write().await;
+                let trusted_peers = state.config.trusted_peers.clone();
+                state.config = Config {
+                    trusted_peers,
+                    ..Config::default()
+                };
+                let history_limit = state.config.history.limit_per_peer as usize;
+                state.conversations.set_history_limit(history_limit);
+                match state.config.save() {
+                    Ok(()) => {
+                        let value =
+                            serde_json::to_value(&state.config).unwrap_or(serde_json::Value::Null);
+                        IpcResponse::ok(IPC_PROTOCOL_VERSION, request.id, value)
+                    }
+                    Err(e) => IpcResponse::err(
+                        IPC_PROTOCOL_VERSION,
+                        request.id,
+                        error_codes::INTERNAL,
+                        e.to_string(),
+                    ),
+                }
+            }
             methods::LIST_PEERS => {
                 let state = self.state.read().await;
                 let peers: Vec<_> = state
@@ -245,6 +268,57 @@ impl RequestHandler for Dispatcher {
                     IPC_PROTOCOL_VERSION,
                     request.id,
                     serde_json::Value::Array(peers),
+                )
+            }
+            methods::RENAME_PEER => {
+                let (peer_ident, alias) = match (
+                    request.params.get("peer").and_then(|v| v.as_str()),
+                    request.params.get("alias").and_then(|v| v.as_str()),
+                ) {
+                    (Some(p), Some(a)) => (p, a),
+                    _ => {
+                        return IpcResponse::err(
+                            IPC_PROTOCOL_VERSION,
+                            request.id,
+                            error_codes::INVALID_PARAMS,
+                            "expected string 'peer' and 'alias'",
+                        )
+                    }
+                };
+                let mut state = self.state.write().await;
+                let endpoint_id = match resolve_peer(&state.config.trusted_peers, peer_ident) {
+                    Ok(peer) => peer.endpoint_id.clone(),
+                    Err((code, message)) => {
+                        return IpcResponse::err(IPC_PROTOCOL_VERSION, request.id, code, message)
+                    }
+                };
+                let alias = match peers::rename_trusted_peer_alias(
+                    &mut state.config.trusted_peers,
+                    &endpoint_id,
+                    alias,
+                ) {
+                    Ok(alias) => alias,
+                    Err(e) => {
+                        return IpcResponse::err(
+                            IPC_PROTOCOL_VERSION,
+                            request.id,
+                            error_codes::INVALID_PARAMS,
+                            e.to_string(),
+                        )
+                    }
+                };
+                if let Err(e) = state.config.save() {
+                    return IpcResponse::err(
+                        IPC_PROTOCOL_VERSION,
+                        request.id,
+                        error_codes::INTERNAL,
+                        e.to_string(),
+                    );
+                }
+                IpcResponse::ok(
+                    IPC_PROTOCOL_VERSION,
+                    request.id,
+                    serde_json::json!({"endpoint_id": endpoint_id, "alias": alias}),
                 )
             }
             methods::CREATE_INVITE => {

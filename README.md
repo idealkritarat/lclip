@@ -80,6 +80,11 @@ lcp config set user.name "Ideal"
 lcp config set user.device_name "MacBook"
 ```
 
+If you do not set them, LCP uses your OS environment values:
+
+- `user.name`: `USERNAME`, then `USER`, then `Me`
+- `user.device_name`: `COMPUTERNAME`, then `HOSTNAME`, then `My Device`
+
 On the first machine:
 
 ```bash
@@ -98,6 +103,7 @@ After pairing:
 
 ```bash
 lcp peers
+lcp peers rename <old-alias> <new-alias>
 lcp send <peer-alias> --text "hello"
 lcp fetch <peer-alias>
 lcp copy <peer-alias>
@@ -109,6 +115,9 @@ lcp copy <peer-alias>
 lcp status                 # daemon, identity, relay, and peer summary
 lcp doctor                 # health checks and suggested fixes
 lcp peers                  # paired peers and online/offline status
+lcp peers rename First Mac # rename a peer's local alias on this machine
+lcp config list            # show local config
+lcp config reset           # reset local settings to defaults; keeps paired peers
 lcp invite                 # create a pairing ticket
 lcp pair "<ticket>"         # join an invite
 lcp send First             # send current clipboard to peer "First"

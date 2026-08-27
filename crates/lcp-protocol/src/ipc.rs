@@ -98,7 +98,9 @@ pub mod methods {
     pub const GET_STATUS: &str = "get_status";
     pub const GET_CONFIG: &str = "get_config";
     pub const SET_CONFIG: &str = "set_config";
+    pub const RESET_CONFIG: &str = "reset_config";
     pub const LIST_PEERS: &str = "list_peers";
+    pub const RENAME_PEER: &str = "rename_peer";
     pub const CREATE_INVITE: &str = "create_invite";
     pub const CANCEL_INVITE: &str = "cancel_invite";
     pub const JOIN_INVITE: &str = "join_invite";

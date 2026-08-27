@@ -31,8 +31,11 @@ struct Cli {
 enum Command {
     /// Show daemon, identity, relay, and peer status.
     Status,
-    /// List trusted peers and their connection status.
-    Peers,
+    /// List trusted peers and manage their local aliases.
+    Peers {
+        #[command(subcommand)]
+        action: Option<PeersAction>,
+    },
     /// Send the current clipboard (or --stdin/--text) to a paired peer.
     Send {
         peer: String,
@@ -96,9 +99,29 @@ enum Command {
 
 #[derive(Subcommand)]
 enum ConfigAction {
-    Get { key: String },
-    Set { key: String, value: String },
+    Get {
+        key: String,
+    },
+    Set {
+        key: String,
+        value: String,
+    },
     List,
+    Reset {
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum PeersAction {
+    Rename {
+        /// Existing peer alias or endpoint-id prefix.
+        peer: String,
+        /// New local alias, used by send/fetch/copy on this machine.
+        alias: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -148,7 +171,12 @@ async fn main() {
 
     let code = match cli.command {
         Command::Status => commands::status::run(cli.json).await,
-        Command::Peers => commands::peers::run(cli.json).await,
+        Command::Peers { action } => match action {
+            Some(PeersAction::Rename { peer, alias }) => {
+                commands::peers::rename(&peer, &alias).await
+            }
+            None => commands::peers::run(cli.json).await,
+        },
         Command::Send { peer, stdin, text } => {
             commands::send::run(&peer, stdin, text.as_deref()).await
         }
@@ -172,6 +200,7 @@ async fn main() {
             ConfigAction::Get { key } => commands::config::get(&key, cli.json).await,
             ConfigAction::Set { key, value } => commands::config::set(&key, &value).await,
             ConfigAction::List => commands::config::list(cli.json).await,
+            ConfigAction::Reset { yes } => commands::config::reset(yes, cli.json).await,
         },
         Command::Daemon { action } => match action {
             DaemonAction::Status => commands::daemon::status().await,

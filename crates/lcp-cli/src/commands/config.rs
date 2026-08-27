@@ -82,6 +82,41 @@ pub async fn list(json: bool) -> anyhow::Result<i32> {
     }
 }
 
+pub async fn reset(yes: bool, json: bool) -> anyhow::Result<i32> {
+    if !yes {
+        let confirmed = output::prompt_yes_no(
+            "Reset local config settings to defaults? Paired peers are kept. [y/N] ",
+        );
+        if !confirmed {
+            println!("Cancelled.");
+            return Ok(output::exit_code::SUCCESS);
+        }
+    }
+
+    let client = daemon_conn::connect_or_autostart().await?;
+    let resp = client
+        .call(
+            IPC_PROTOCOL_VERSION,
+            methods::RESET_CONFIG,
+            serde_json::json!({}),
+        )
+        .await?;
+    match unwrap_response(resp) {
+        Ok(value) => {
+            if json {
+                output::print_json(&value);
+            } else {
+                println!("Config reset to defaults. Paired peers were kept.");
+            }
+            Ok(output::exit_code::SUCCESS)
+        }
+        Err(err) => {
+            eprintln!("Error: {}", err.message);
+            Ok(output::exit_code::GENERAL_ERROR)
+        }
+    }
+}
+
 fn flatten(prefix: &str, value: &serde_json::Value, out: &mut Vec<(String, String)>) {
     match value {
         serde_json::Value::Object(map) => {

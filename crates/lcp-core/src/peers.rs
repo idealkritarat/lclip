@@ -109,6 +109,24 @@ pub fn add_trusted_peer(
     alias
 }
 
+pub fn rename_trusted_peer_alias(
+    peers: &mut [TrustedPeer],
+    endpoint_id: &str,
+    new_alias: &str,
+) -> Result<String, AliasError> {
+    let alias = validate_alias(new_alias)?;
+    if peers
+        .iter()
+        .any(|p| p.endpoint_id != endpoint_id && p.alias.eq_ignore_ascii_case(&alias))
+    {
+        return Err(AliasError::Duplicate(alias));
+    }
+    if let Some(peer) = peers.iter_mut().find(|p| p.endpoint_id == endpoint_id) {
+        peer.alias = alias.clone();
+    }
+    Ok(alias)
+}
+
 /// Returns `true` if a peer was actually removed.
 pub fn remove_trusted_peer(peers: &mut Vec<TrustedPeer>, endpoint_id: &str) -> bool {
     let before = peers.len();
@@ -237,5 +255,22 @@ mod tests {
         assert!(remove_trusted_peer(&mut peers, "endpoint-a"));
         assert!(peers.is_empty());
         assert!(!remove_trusted_peer(&mut peers, "endpoint-a"));
+    }
+
+    #[test]
+    fn rename_trusted_peer_alias_updates_alias() {
+        let mut peers = vec![peer("First", "aaaa1111")];
+        let alias = rename_trusted_peer_alias(&mut peers, "aaaa1111", "Laptop").unwrap();
+        assert_eq!(alias, "Laptop");
+        assert_eq!(peers[0].alias, "Laptop");
+    }
+
+    #[test]
+    fn rename_trusted_peer_alias_rejects_duplicate() {
+        let mut peers = vec![peer("First", "aaaa1111"), peer("Second", "bbbb2222")];
+        assert_eq!(
+            rename_trusted_peer_alias(&mut peers, "aaaa1111", "second").unwrap_err(),
+            AliasError::Duplicate("second".into())
+        );
     }
 }

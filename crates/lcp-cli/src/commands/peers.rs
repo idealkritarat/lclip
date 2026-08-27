@@ -65,3 +65,25 @@ pub async fn run(json: bool) -> anyhow::Result<i32> {
         }
     }
 }
+
+pub async fn rename(peer: &str, alias: &str) -> anyhow::Result<i32> {
+    let client = daemon_conn::connect_or_autostart().await?;
+    let resp = client
+        .call(
+            IPC_PROTOCOL_VERSION,
+            methods::RENAME_PEER,
+            serde_json::json!({"peer": peer, "alias": alias}),
+        )
+        .await?;
+    match unwrap_response(resp) {
+        Ok(value) => {
+            let alias = value.get("alias").and_then(|v| v.as_str()).unwrap_or(alias);
+            println!("Renamed peer to {alias}.");
+            Ok(output::exit_code::SUCCESS)
+        }
+        Err(err) => {
+            eprintln!("Error: {}", err.message);
+            Ok(crate::exit_code_for(&err))
+        }
+    }
+}
