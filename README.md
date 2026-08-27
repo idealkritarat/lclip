@@ -1,140 +1,173 @@
 # LCP
 
-LCP sends code and UTF-8 plain text between friends' machines, fast — across macOS and Windows, even on different networks. Pair once with a ticket, then:
+LCP is a small CLI tool for sending clipboard text or code between paired machines.
 
-```bash
-lcp invite               # generate a pairing ticket and wait for a peer
-lcp pair <ticket>         # pair using a ticket a friend sent you
-lcp send First            # send your current clipboard to "First"
-lcp copy First            # pull First's latest message into your clipboard
-lcp fetch First           # print First's latest message to stdout, for piping
-lcp pick First            # interactively choose an older message to copy
-lcp peers                 # list paired peers and their live status
-lcp doctor                # check daemon/identity/connectivity health
-```
+It is built around two binaries:
 
-No account, no server, no message database. `lanclipd` runs in the background per user and keeps receiving even when no terminal is open; direct peer-to-peer when possible, encrypted relay fallback when not, via [Iroh](https://docs.iroh.computer/).
+- `lanclipd`: a per-user background daemon that owns networking, pairing, peer state, and in-memory message history.
+- `lcp`: a stateless CLI client that talks to the daemon over local IPC.
 
-See [LCP-Agentic-Implementation-Spec.md](LCP-Agentic-Implementation-Spec.md) for the full normative specification this implementation follows, and `docs/` for architecture, protocol, and security detail.
-
-## Status
-
-The cross-platform Rust core (Phases 0-5 of the spec: workspace, daemon/IPC, in-memory messaging, real Iroh pairing and messaging, connection reuse and status, security/reliability hardening) is implemented and covered by 57 automated tests. It has been verified end-to-end with two live local daemons actually pairing and exchanging messages over a real Iroh connection.
-
-Phase 6 now has a native macOS menu bar app source tree in `macos/LCPMenuBar/`. Phase 7 has per-user install/uninstall scripts, packaging scripts, checksums, and CI configuration. macOS-specific pieces were authored from a Windows environment and still need real macOS/Xcode verification before release.
-
-## Building from source
-
-Requires a stable Rust toolchain (see `rust-toolchain.toml`).
-
-```bash
-cargo build --workspace
-cargo test --workspace
-```
-
-On Windows, building `x86_64-pc-windows-msvc` (the default) requires the MSVC C++ build tools (Visual Studio Build Tools with the "Desktop development with C++" workload). See `docs/troubleshooting.md` if you hit a linker error.
-
-Binaries: `lanclipd` (background daemon), `lcp` (CLI). The macOS menu bar app lives in `macos/LCPMenuBar/` and is built separately with Xcode.
-
-Build the macOS menu bar app on macOS:
-
-```bash
-xcodebuild \
-  -project macos/LCPMenuBar/LCPMenuBar.xcodeproj \
-  -scheme LCPMenuBar \
-  -configuration Release \
-  CODE_SIGNING_ALLOWED=NO
-```
+No account, no application server, no message database. Pair once with a ticket, then send text directly over Iroh P2P when possible, with encrypted relay fallback when needed.
 
 ## Install
 
-macOS, per user:
+### macOS
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-macos.sh | bash
 ```
 
-Windows, per user from PowerShell:
+### Windows
+
+Run in PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'lcp-install.ps1'; irm https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-windows.ps1 -OutFile $p; & $p"
 ```
 
-The bootstrap installer first tries to install a prebuilt binary from the latest GitHub Release. If no matching release exists yet, it clones the repo, installs a minimal Rust toolchain if needed, builds from source, registers daemon autostart, and starts `lanclipd`.
+The bootstrap installer first tries to install a prebuilt binary from the latest GitHub Release. If no matching release exists, it builds from source and installs a minimal Rust toolchain if needed.
 
-To install from an already-cloned repo instead:
+Installed files:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
-```
+- macOS: `~/.local/bin/lcp` and `~/.local/bin/lanclipd`
+- Windows: `%LOCALAPPDATA%\Programs\LCP\lcp.exe` and `lanclipd.exe`
 
-```bash
-bash ./scripts/install-macos.sh
-```
+The installer also enables per-user daemon autostart and starts `lanclipd`.
 
-Uninstall removes autostart and installed binaries but leaves identity/config intact:
+## Uninstall
+
+Uninstall removes autostart and installed binaries. It does not delete your identity, config, or paired peers.
+
+### macOS
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/uninstall-macos.sh | bash
 ```
 
+### Windows
+
+Run in PowerShell:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'lcp-uninstall.ps1'; irm https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/uninstall-windows.ps1 -OutFile $p; & $p"
 ```
 
-Pass `KEEP_FILES=1` on macOS or `-KeepFiles` on Windows if you only want to disable autostart and stop the daemon.
+## Quick Start
 
-Homebrew is the intended nicer macOS install path after the first tagged release exists. The formula should live in a separate tap repo such as `idealkritarat/homebrew-lclip`, so the user-facing command becomes `brew install idealkritarat/lclip/lcp`.
+Set readable names on each machine:
 
-## First Use
+```bash
+lcp config set user.name "Ideal"
+lcp config set user.device_name "MacBook"
+```
 
-On machine A:
+On the first machine:
 
 ```bash
 lcp invite
 ```
 
-Send the printed ticket to machine B, then on machine B:
+Copy the printed ticket to the second machine:
 
 ```bash
-lcp pair <ticket>
+lcp pair "<ticket>"
 ```
 
-After both sides confirm the same verification code:
+Both machines will show a verification string. If it matches, type `y` on both sides.
+
+After pairing:
 
 ```bash
 lcp peers
-lcp send <peer-alias>
+lcp send <peer-alias> --text "hello"
+lcp fetch <peer-alias>
 lcp copy <peer-alias>
 ```
 
-On Windows, allow the firewall prompt for `lanclipd` if it appears.
+## Common Commands
 
-## Packaging
+```bash
+lcp status                 # daemon, identity, relay, and peer summary
+lcp doctor                 # health checks and suggested fixes
+lcp peers                  # paired peers and online/offline status
+lcp invite                 # create a pairing ticket
+lcp pair "<ticket>"         # join an invite
+lcp send First             # send current clipboard to peer "First"
+lcp send First --text "hi"  # send explicit text
+lcp fetch First            # print latest incoming message
+lcp copy First             # copy latest incoming message to clipboard
+lcp pick First             # choose a message interactively
+lcp unpair First           # remove a paired peer
+```
+
+Daemon controls:
+
+```bash
+lcp daemon status
+lcp daemon start
+lcp daemon stop
+lcp daemon restart
+lcp daemon install
+lcp daemon uninstall
+```
+
+## Build From Source
+
+Requires a stable Rust toolchain.
+
+```bash
+git clone https://github.com/idealkritarat/lclip.git
+cd lclip
+cargo build --workspace --release
+cargo test --workspace
+```
+
+Install from a clone:
+
+```bash
+bash ./scripts/install-macos.sh
+```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 ```
+
+On Windows, the default MSVC Rust toolchain requires Visual Studio Build Tools with the "Desktop development with C++" workload.
+
+## Package
 
 ```bash
 ./scripts/package-macos.sh
 ```
 
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
+```
+
 Artifacts are written to `dist/` with `.sha256` checksum files.
 
-## Repository layout
+## Data Locations
+
+- macOS config: `~/Library/Application Support/lcp/config.json`
+- macOS logs: `~/Library/Logs/lcp/`
+- macOS socket: `~/Library/Application Support/lcp/lanclipd.sock`
+- Windows config: `%APPDATA%\lcp\config.json`
+- Windows logs: `%LOCALAPPDATA%\lcp\logs\`
+
+Message history is stored only in daemon memory and disappears when `lanclipd` exits.
+
+## Repository Layout
 
 ```text
-crates/lcp-protocol   pure wire/config/IPC types, no I/O
-crates/lcp-core       Iroh endpoint, pairing, peer state, conversations
-crates/lcp-ipc        cross-platform local IPC transport
-crates/lanclipd       the daemon binary
-crates/lcp-cli        the lcp CLI binary
-macos/LCPMenuBar      native macOS menu bar UI (Swift/AppKit/SwiftUI)
-docs/                 architecture, protocol, security, troubleshooting, ADRs
-scripts/              install/uninstall helpers
+crates/lcp-protocol   wire, ticket, and IPC types
+crates/lcp-core       Iroh endpoint, pairing, peers, state, conversations
+crates/lcp-ipc        local IPC transport
+crates/lanclipd       background daemon
+crates/lcp-cli        CLI client
+docs/                 protocol, architecture, security, troubleshooting
+scripts/              install, uninstall, package, bootstrap
 ```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

@@ -6,12 +6,12 @@ Accepted
 
 ## Context
 
-The project needs both a daemon/CLI core and a native macOS UI. Building the UI first would make core behavior (pairing, messaging, reconnect) hard to test independently and would bias the protocol design toward one platform.
+The project needs a daemon/CLI core that can be tested independently on macOS and Windows. Keeping the CLI path first prevents release-critical behavior (pairing, messaging, reconnect) from depending on any graphical client.
 
 ## Decision
 
-Implement `lanclipd` and `lcp` before any GUI. The macOS menu bar app (Phase 6) is not started until the CLI can pair and exchange messages across all required macOS/Windows combinations.
+Implement and release `lanclipd` and `lcp` as the primary product surface. Any graphical client is separate scope and must build on the same daemon/IPC contract.
 
 ## Consequences
 
-Core behavior is independently testable on both platforms via CLI and automated tests before any UI code exists. The UI is guaranteed to be a thin client over an already-working IPC/network stack rather than co-evolving with it.
+Core behavior is independently testable on both platforms via CLI and automated tests. Future clients can be added without changing the daemon's network ownership model.

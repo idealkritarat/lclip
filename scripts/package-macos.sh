@@ -25,19 +25,6 @@ install -m 0644 "$repo_root/LICENSE" "$stage/LICENSE"
 install -m 0755 "$repo_root/scripts/install-macos.sh" "$stage/scripts/install-macos.sh"
 install -m 0755 "$repo_root/scripts/uninstall-macos.sh" "$stage/scripts/uninstall-macos.sh"
 
-if command -v xcodebuild >/dev/null 2>&1; then
-  xcodebuild \
-    -project "$repo_root/macos/LCPMenuBar/LCPMenuBar.xcodeproj" \
-    -scheme LCPMenuBar \
-    -configuration Release \
-    -derivedDataPath "$repo_root/target/xcode" \
-    CODE_SIGNING_ALLOWED=NO
-  app_path="$repo_root/target/xcode/Build/Products/Release/LCPMenuBar.app"
-  if [[ -d "$app_path" ]]; then
-    cp -R "$app_path" "$stage/LCPMenuBar.app"
-  fi
-fi
-
 rm -f "$archive"
 (cd "$(dirname "$stage")" && tar -czf "$archive" "$(basename "$stage")")
 (cd "$(dirname "$archive")" && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256")

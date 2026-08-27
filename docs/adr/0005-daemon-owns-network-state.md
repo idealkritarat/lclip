@@ -10,8 +10,8 @@ A short-lived CLI process cannot receive messages in real time or maintain a sta
 
 ## Decision
 
-`lanclipd` is a long-running per-user daemon and the single owner of all network/session state (Iroh endpoint, trusted peers, active invitations, connections, in-memory conversation history, dedup cache, reconnect tasks). `lcp` and the macOS UI are stateless clients that talk to it over local IPC and never open their own Iroh endpoint.
+`lanclipd` is a long-running per-user daemon and the single owner of all network/session state (Iroh endpoint, trusted peers, active invitations, connections, in-memory conversation history, dedup cache, reconnect tasks). `lcp` is a stateless client that talks to it over local IPC and never opens its own Iroh endpoint.
 
 ## Consequences
 
-Exactly one process per user holds the Iroh identity and can receive while no terminal or UI is open. All clients must tolerate the daemon restarting (reconnect IPC, re-fetch snapshots — spec §10.6) and must never duplicate network state locally.
+Exactly one process per user holds the Iroh identity and can receive while no terminal is open. The CLI must tolerate the daemon restarting and must never duplicate network state locally.

@@ -20,18 +20,6 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
-  macos-ui:
-    name: macOS menu bar UI
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          xcodebuild \
-            -project macos/LCPMenuBar/LCPMenuBar.xcodeproj \
-            -scheme LCPMenuBar \
-            -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO
-
   package:
     name: Package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

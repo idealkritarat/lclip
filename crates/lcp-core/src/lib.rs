@@ -1,4 +1,4 @@
-//! Iroh endpoint, pairing, peer state, conversations, and security policy. No CLI or UI code.
+//! Iroh endpoint, pairing, peer state, conversations, and security policy. No CLI code.
 
 pub mod config;
 pub mod connection;

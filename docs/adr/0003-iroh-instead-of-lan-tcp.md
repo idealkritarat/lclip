@@ -14,4 +14,4 @@ Use Iroh as the sole cross-network transport. Iroh provides endpoint identity, a
 
 ## Consequences
 
-Device identity becomes an Iroh `EndpointId` (Ed25519 public key) rather than an IP address or LAN-discoverable name. All connection establishment, direct-vs-relay selection, and transport encryption are delegated to Iroh; the application only owns pairing, trust, message framing, and CLI/UI (see [[0005-daemon-owns-network-state]]).
+Device identity becomes an Iroh `EndpointId` (Ed25519 public key) rather than an IP address or LAN-discoverable name. All connection establishment, direct-vs-relay selection, and transport encryption are delegated to Iroh; the application only owns pairing, trust, message framing, and the CLI (see [[0005-daemon-owns-network-state]]).

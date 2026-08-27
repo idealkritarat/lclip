@@ -1,4 +1,4 @@
-//! Local IPC wire types shared between `lanclipd` (server) and `lcp`/macOS UI (clients).
+//! Local IPC wire types shared between `lanclipd` (server) and `lcp` (client).
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
