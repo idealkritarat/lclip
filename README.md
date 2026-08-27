@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/
 Run in PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'lcp-install.ps1'; irm https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-windows.ps1 -OutFile $p; & $p"
+irm -Uri https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-windows.ps1 -OutFile "$env:TEMP\lcp-install.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\lcp-install.ps1"
 ```
 
 The bootstrap installer first tries to install a prebuilt binary from the latest GitHub Release. If no matching release exists, it builds from source and installs a minimal Rust toolchain if needed.
@@ -49,7 +49,7 @@ Windows:
 
 ```powershell
 lcp daemon stop
-powershell -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'lcp-install.ps1'; irm https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-windows.ps1 -OutFile $p; & $p"
+irm -Uri https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-windows.ps1 -OutFile "$env:TEMP\lcp-install.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\lcp-install.ps1"
 ```
 
 Stopping the daemon first avoids replacing a binary while it is still running, especially on Windows where running executables may be locked.
@@ -69,7 +69,7 @@ curl -fsSL https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/
 Run in PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'lcp-uninstall.ps1'; irm https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/uninstall-windows.ps1 -OutFile $p; & $p"
+irm -Uri https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/uninstall-windows.ps1 -OutFile "$env:TEMP\lcp-uninstall.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\lcp-uninstall.ps1"
 ```
 
 ## Quick Start
