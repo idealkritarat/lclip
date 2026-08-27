@@ -19,9 +19,9 @@ jobs:
             artifacts: |
               dist/lcp-windows-x86_64.zip
               dist/lcp-windows-x86_64.zip.sha256
-          - os: macos-13
+          - os: macos-latest
             asset: macos-x86_64
-            command: ./scripts/package-macos.sh
+            command: rustup target add x86_64-apple-darwin && LCP_ASSET_ARCH=x86_64 CARGO_BUILD_TARGET=x86_64-apple-darwin ./scripts/package-macos.sh
             artifacts: |
               dist/lcp-macos-*.tar.gz
               dist/lcp-macos-*.tar.gz.sha256
