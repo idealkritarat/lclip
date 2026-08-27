@@ -48,27 +48,43 @@ xcodebuild \
 
 ## Install
 
-Windows, per user:
+macOS, per user:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-macos.sh | bash
+```
+
+Windows, per user from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'lcp-install.ps1'; irm https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-windows.ps1 -OutFile $p; & $p"
+```
+
+The bootstrap installer first tries to install a prebuilt binary from the latest GitHub Release. If no matching release exists yet, it clones the repo, installs a minimal Rust toolchain if needed, builds from source, registers daemon autostart, and starts `lanclipd`.
+
+To install from an already-cloned repo instead:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 ```
 
-macOS, per user:
-
 ```bash
-./scripts/install-macos.sh
+bash ./scripts/install-macos.sh
 ```
 
-Both scripts build release binaries, copy `lcp` and `lanclipd` to a user-writable location, enable daemon autostart, and start the daemon. Uninstall removes autostart and installed binaries but leaves identity/config intact:
+Uninstall removes autostart and installed binaries but leaves identity/config intact:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/uninstall-macos.sh | bash
+```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-windows.ps1
+powershell -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'lcp-uninstall.ps1'; irm https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/uninstall-windows.ps1 -OutFile $p; & $p"
 ```
 
-```bash
-./scripts/uninstall-macos.sh
-```
+Pass `KEEP_FILES=1` on macOS or `-KeepFiles` on Windows if you only want to disable autostart and stop the daemon.
+
+Homebrew is the intended nicer macOS install path after the first tagged release exists. The formula should live in a separate tap repo such as `idealkritarat/homebrew-lclip`, so the user-facing command becomes `brew install idealkritarat/lclip/lcp`.
 
 ## First Use
 
