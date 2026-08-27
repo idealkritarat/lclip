@@ -160,7 +160,7 @@ impl ConversationStore {
         message_id: Uuid,
         text: String,
         status: MessageStatus,
-    ) {
+    ) -> StoredMessage {
         let now = now_unix_ms();
         let message = StoredMessage {
             id: message_id,
@@ -176,9 +176,10 @@ impl ConversationStore {
         let conversation = self.conversations.entry(peer_id.to_string()).or_default();
         push_bounded(
             &mut conversation.messages,
-            message,
+            message.clone(),
             self.history_limit_per_peer,
         );
+        message
     }
 
     pub fn update_outgoing_status(
@@ -221,6 +222,10 @@ impl ConversationStore {
             .get(peer_id)
             .into_iter()
             .flat_map(|c| c.messages.iter())
+    }
+
+    pub fn message_for(&self, peer_id: &str, message_id: Uuid) -> Option<&StoredMessage> {
+        self.messages_for(peer_id).find(|m| m.id == message_id)
     }
 
     /// All messages across every peer, newest first by local record time (spec §11.9's `pick`
