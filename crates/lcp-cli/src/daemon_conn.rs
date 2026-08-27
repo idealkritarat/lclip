@@ -38,12 +38,11 @@ pub async fn try_connect() -> std::io::Result<IpcClient> {
     #[cfg(windows)]
     {
         let user_id = lcp_ipc::windows::current_user_identifier();
-        let stream =
-            tokio::time::timeout(IPC_CONNECT_TIMEOUT, lcp_ipc::windows::connect(&user_id))
-                .await
-                .map_err(|_| {
-                    std::io::Error::new(std::io::ErrorKind::TimedOut, "IPC connect timed out")
-                })??;
+        let stream = tokio::time::timeout(IPC_CONNECT_TIMEOUT, lcp_ipc::windows::connect(&user_id))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "IPC connect timed out")
+            })??;
         Ok(IpcClient::spawn(stream))
     }
 }

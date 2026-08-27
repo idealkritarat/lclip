@@ -23,49 +23,6 @@ function Get-CargoPath {
     throw "cargo was not found on PATH or at $Fallback"
 }
 
-function Invoke-LcpCommand {
-    param(
-        [string[]]$Arguments,
-        [int]$TimeoutSeconds = 20
-    )
-
-    $CommandName = "lcp " + ($Arguments -join " ")
-    $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $StartInfo.FileName = $Lcp
-    $StartInfo.Arguments = $Arguments -join " "
-    $StartInfo.UseShellExecute = $false
-    $StartInfo.RedirectStandardOutput = $true
-    $StartInfo.RedirectStandardError = $true
-    $StartInfo.CreateNoWindow = $true
-
-    $Process = New-Object System.Diagnostics.Process
-    $Process.StartInfo = $StartInfo
-    try {
-        [void]$Process.Start()
-        if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
-            try {
-                $Process.Kill()
-            } catch {
-            }
-            throw "$CommandName timed out after $TimeoutSeconds seconds."
-        }
-
-        $Output = $Process.StandardOutput.ReadToEnd().Trim()
-        $ErrorOutput = $Process.StandardError.ReadToEnd().Trim()
-        if ($Output) {
-            Write-Host $Output
-        }
-        if ($ErrorOutput) {
-            Write-Host $ErrorOutput
-        }
-        return $Process.ExitCode
-    } finally {
-        if ($Process) {
-            $Process.Dispose()
-        }
-    }
-}
-
 if ((Test-Path $BundledLcp) -and (Test-Path $BundledDaemon)) {
     Write-Host "Using bundled LCP binaries."
     $LcpSource = $BundledLcp
@@ -91,6 +48,13 @@ if (-not (Test-Path $LcpSource) -or -not (Test-Path $DaemonSource)) {
     throw "Missing LCP binaries. Re-run without -SkipBuild, or run this script from an extracted release bundle."
 }
 
+Write-Host "Stopping existing daemon if it is running..."
+$ExistingDaemon = @(Get-Process -Name "lanclipd" -ErrorAction SilentlyContinue)
+if ($ExistingDaemon.Count -gt 0) {
+    $ExistingDaemon | Stop-Process -Force
+    $ExistingDaemon | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+}
+
 Write-Host "Copying binaries to $InstallDir..."
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Force $LcpSource $InstallDir
@@ -108,18 +72,23 @@ if ($PathParts -notcontains $InstallDir) {
     $env:Path = "$InstallDir;$env:Path"
 }
 
-$Lcp = Join-Path $InstallDir "lcp.exe"
+$Daemon = Join-Path $InstallDir "lanclipd.exe"
 Write-Host "Registering daemon autostart..."
-$InstallExitCode = Invoke-LcpCommand -Arguments @("daemon", "install") -TimeoutSeconds 20
-if ($InstallExitCode -ne 0) {
-    throw "lcp daemon install failed with exit code $InstallExitCode."
+$RunKey = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+$DaemonRunValue = "`"$Daemon`""
+& reg.exe add $RunKey /v LCP /t REG_SZ /d $DaemonRunValue /f | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to register LCP autostart with reg.exe exit code $LASTEXITCODE."
 }
+Write-Host "Autostart installed for the current user."
 
 Write-Host "Starting daemon..."
-$StartExitCode = Invoke-LcpCommand -Arguments @("daemon", "start") -TimeoutSeconds 30
-if ($StartExitCode -ne 0) {
-    Write-Host "Warning: lcp daemon start exited with code $StartExitCode."
-    Write-Host "You can retry after install with: lcp daemon start"
+try {
+    Start-Process -FilePath $Daemon -WindowStyle Hidden | Out-Null
+    Write-Host "lanclipd launch requested."
+} catch {
+    Write-Host "Warning: could not start lanclipd now: $($_.Exception.Message)"
+    Write-Host "You can start it later by opening a new terminal and running: lanclipd"
 }
 
 Write-Host "LCP installed to $InstallDir"

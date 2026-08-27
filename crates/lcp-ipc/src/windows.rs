@@ -9,8 +9,11 @@ use std::sync::Arc;
 use tokio::net::windows::named_pipe::{
     ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
 };
+use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
 
 use crate::server::{handle_connection, RequestHandler};
+
+const PIPE_CONNECT_TIMEOUT_MS: u32 = 500;
 
 pub fn pipe_name(user_identifier: &str) -> String {
     format!(r"\\.\pipe\lcp-{user_identifier}")
@@ -139,5 +142,10 @@ pub async fn serve<H: RequestHandler>(first: NamedPipeServer, addr: String, hand
 
 pub async fn connect(user_identifier: &str) -> io::Result<NamedPipeClient> {
     let addr = pipe_name(user_identifier);
+    let wide = to_wide_null(&addr);
+    let pipe_available = unsafe { WaitNamedPipeW(wide.as_ptr(), PIPE_CONNECT_TIMEOUT_MS) };
+    if pipe_available == 0 {
+        return Err(io::Error::last_os_error());
+    }
     ClientOptions::new().open(&addr)
 }

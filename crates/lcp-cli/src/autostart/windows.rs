@@ -12,6 +12,7 @@ fn daemon_path() -> anyhow::Result<std::path::PathBuf> {
 
 pub fn install() -> anyhow::Result<()> {
     let daemon_path = daemon_path()?;
+    let daemon_command = format!("\"{}\"", daemon_path.display());
     let status = std::process::Command::new("reg")
         .args([
             "add",
@@ -21,7 +22,7 @@ pub fn install() -> anyhow::Result<()> {
             "/t",
             "REG_SZ",
             "/d",
-            &daemon_path.display().to_string(),
+            &daemon_command,
             "/f",
         ])
         .status()?;

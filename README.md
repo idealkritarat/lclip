@@ -38,6 +38,8 @@ The installer also enables per-user daemon autostart and starts `lanclipd`.
 
 Run the same install command again to update LCP. It replaces the installed binaries, keeps autostart enabled, and preserves your identity, config, and paired peers.
 
+On Windows, the installer stops any running `lanclipd` process before replacing the binary.
+
 macOS:
 
 ```bash
@@ -48,11 +50,8 @@ curl -fsSL https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/
 Windows:
 
 ```powershell
-lcp daemon stop
 irm -Uri https://raw.githubusercontent.com/idealkritarat/lclip/master/scripts/bootstrap-windows.ps1 -OutFile "$env:TEMP\lcp-install.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\lcp-install.ps1"
 ```
-
-Stopping the daemon first avoids replacing a binary while it is still running, especially on Windows where running executables may be locked.
 
 ## Uninstall
 
