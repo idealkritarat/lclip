@@ -68,7 +68,7 @@ function Install-FromRelease {
         throw "Release archive did not contain install-windows.ps1"
     }
     Write-Host "Installing LCP..."
-    & powershell -ExecutionPolicy Bypass -File $InstallScript.FullName -InstallDir $InstallDir -SkipBuild
+    & $InstallScript.FullName -InstallDir $InstallDir -SkipBuild
     return $true
 }
 
@@ -103,7 +103,7 @@ function Install-FromSource {
     Install-Rustup
     Write-Host "Cloning LCP source..."
     git clone --depth 1 --branch $Branch "https://github.com/$Repo.git" (Join-Path $Tmp "lclip")
-    & powershell -ExecutionPolicy Bypass -File (Join-Path $Tmp "lclip\scripts\install-windows.ps1") -InstallDir $InstallDir
+    & (Join-Path $Tmp "lclip\scripts\install-windows.ps1") -InstallDir $InstallDir
 }
 
 try {

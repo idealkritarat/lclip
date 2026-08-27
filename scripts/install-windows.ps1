@@ -23,6 +23,40 @@ function Get-CargoPath {
     throw "cargo was not found on PATH or at $Fallback"
 }
 
+function Invoke-LcpCommand {
+    param(
+        [string[]]$Arguments,
+        [int]$TimeoutSeconds = 20
+    )
+
+    $CommandName = "lcp " + ($Arguments -join " ")
+    $Stdout = Join-Path ([System.IO.Path]::GetTempPath()) ("lcp-command-" + [System.Guid]::NewGuid() + ".out")
+    $Stderr = Join-Path ([System.IO.Path]::GetTempPath()) ("lcp-command-" + [System.Guid]::NewGuid() + ".err")
+
+    try {
+        $Process = Start-Process -FilePath $Lcp -ArgumentList $Arguments -NoNewWindow -PassThru -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr
+        if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
+            try {
+                $Process.Kill()
+            } catch {
+            }
+            throw "$CommandName timed out after $TimeoutSeconds seconds."
+        }
+
+        $Output = if (Test-Path $Stdout) { (Get-Content $Stdout -Raw).Trim() } else { "" }
+        $ErrorOutput = if (Test-Path $Stderr) { (Get-Content $Stderr -Raw).Trim() } else { "" }
+        if ($Output) {
+            Write-Host $Output
+        }
+        if ($ErrorOutput) {
+            Write-Host $ErrorOutput
+        }
+        return $Process.ExitCode
+    } finally {
+        Remove-Item -LiteralPath $Stdout, $Stderr -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if ((Test-Path $BundledLcp) -and (Test-Path $BundledDaemon)) {
     Write-Host "Using bundled LCP binaries."
     $LcpSource = $BundledLcp
@@ -67,9 +101,17 @@ if ($PathParts -notcontains $InstallDir) {
 
 $Lcp = Join-Path $InstallDir "lcp.exe"
 Write-Host "Registering daemon autostart..."
-& $Lcp daemon install
+$InstallExitCode = Invoke-LcpCommand -Arguments @("daemon", "install") -TimeoutSeconds 20
+if ($InstallExitCode -ne 0) {
+    throw "lcp daemon install failed with exit code $InstallExitCode."
+}
+
 Write-Host "Starting daemon..."
-& $Lcp daemon start
+$StartExitCode = Invoke-LcpCommand -Arguments @("daemon", "start") -TimeoutSeconds 30
+if ($StartExitCode -ne 0) {
+    Write-Host "Warning: lcp daemon start exited with code $StartExitCode."
+    Write-Host "You can retry after install with: lcp daemon start"
+}
 
 Write-Host "LCP installed to $InstallDir"
 Write-Host "Open a new terminal if 'lcp' is not on PATH in this one."
