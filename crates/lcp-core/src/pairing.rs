@@ -19,6 +19,7 @@ use crate::transport::{now_unix_ms, read_envelope, write_envelope, TransportErro
 
 pub const PAIRING_CONTEXT: &[u8] = b"lcp-pairing-v1";
 pub const PAIRING_CONFIRM_TIMEOUT: Duration = Duration::from_secs(120);
+const PAIRING_FINISH_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A short, curated list (not a security boundary -- see module docs) used only to render a
 /// human-checkable string. 64 entries so a byte maps onto it with a clean, low-bias modulo.
@@ -397,14 +398,32 @@ async fn run_confirmation_exchange(
     let _ = send.finish();
 
     if !local_confirmed {
+        wait_for_confirm_delivery(send).await;
         return Ok(false);
     }
 
     let remaining = PAIRING_CONFIRM_TIMEOUT.saturating_sub(start.elapsed());
     let remote_envelope = tokio::time::timeout(remaining, read_envelope(recv)).await??;
-    match remote_envelope.body {
+    let remote_confirmed = match remote_envelope.body {
         NetworkBody::PairConfirm(c) => Ok(c.confirmed),
         _ => Ok(false),
+    };
+    wait_for_confirm_delivery(send).await;
+    remote_confirmed
+}
+
+async fn wait_for_confirm_delivery(send: &SendStream) {
+    match tokio::time::timeout(PAIRING_FINISH_ACK_TIMEOUT, send.stopped()).await {
+        Ok(Ok(None)) => {}
+        Ok(Ok(Some(code))) => {
+            tracing::debug!(?code, "peer stopped pairing confirm stream");
+        }
+        Ok(Err(e)) => {
+            tracing::debug!(error = %e, "pairing confirm stream was not fully acknowledged");
+        }
+        Err(_) => {
+            tracing::debug!("timed out waiting for pairing confirm stream acknowledgement");
+        }
     }
 }
 
