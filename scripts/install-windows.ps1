@@ -24,10 +24,12 @@ function Get-CargoPath {
 }
 
 if ((Test-Path $BundledLcp) -and (Test-Path $BundledDaemon)) {
+    Write-Host "Using bundled LCP binaries."
     $LcpSource = $BundledLcp
     $DaemonSource = $BundledDaemon
 } else {
     if (-not $SkipBuild) {
+        Write-Host "Building LCP from source..."
         Push-Location $RepoRoot
         try {
             $CargoProfile = if ($Configuration -eq "debug") { "dev" } else { "release" }
@@ -46,6 +48,7 @@ if (-not (Test-Path $LcpSource) -or -not (Test-Path $DaemonSource)) {
     throw "Missing LCP binaries. Re-run without -SkipBuild, or run this script from an extracted release bundle."
 }
 
+Write-Host "Copying binaries to $InstallDir..."
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Force $LcpSource $InstallDir
 Copy-Item -Force $DaemonSource $InstallDir
@@ -56,13 +59,16 @@ if ($UserPath) {
     $PathParts = $UserPath -split ";" | Where-Object { $_ }
 }
 if ($PathParts -notcontains $InstallDir) {
+    Write-Host "Adding LCP to user PATH..."
     $NewPath = (@($PathParts) + $InstallDir) -join ";"
     [Environment]::SetEnvironmentVariable("Path", $NewPath, "User")
     $env:Path = "$InstallDir;$env:Path"
 }
 
 $Lcp = Join-Path $InstallDir "lcp.exe"
+Write-Host "Registering daemon autostart..."
 & $Lcp daemon install
+Write-Host "Starting daemon..."
 & $Lcp daemon start
 
 Write-Host "LCP installed to $InstallDir"
