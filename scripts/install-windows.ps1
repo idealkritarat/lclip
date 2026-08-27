@@ -43,8 +43,14 @@ function Invoke-LcpCommand {
             throw "$CommandName timed out after $TimeoutSeconds seconds."
         }
 
-        $Output = if (Test-Path $Stdout) { (Get-Content $Stdout -Raw).Trim() } else { "" }
-        $ErrorOutput = if (Test-Path $Stderr) { (Get-Content $Stderr -Raw).Trim() } else { "" }
+        $Output = ""
+        if ((Test-Path $Stdout) -and ((Get-Item $Stdout).Length -gt 0)) {
+            $Output = (Get-Content $Stdout -Raw).Trim()
+        }
+        $ErrorOutput = ""
+        if ((Test-Path $Stderr) -and ((Get-Item $Stderr).Length -gt 0)) {
+            $ErrorOutput = (Get-Content $Stderr -Raw).Trim()
+        }
         if ($Output) {
             Write-Host $Output
         }
