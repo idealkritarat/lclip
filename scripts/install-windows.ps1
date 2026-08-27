@@ -30,11 +30,18 @@ function Invoke-LcpCommand {
     )
 
     $CommandName = "lcp " + ($Arguments -join " ")
-    $Stdout = Join-Path ([System.IO.Path]::GetTempPath()) ("lcp-command-" + [System.Guid]::NewGuid() + ".out")
-    $Stderr = Join-Path ([System.IO.Path]::GetTempPath()) ("lcp-command-" + [System.Guid]::NewGuid() + ".err")
+    $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $StartInfo.FileName = $Lcp
+    $StartInfo.Arguments = $Arguments -join " "
+    $StartInfo.UseShellExecute = $false
+    $StartInfo.RedirectStandardOutput = $true
+    $StartInfo.RedirectStandardError = $true
+    $StartInfo.CreateNoWindow = $true
 
+    $Process = New-Object System.Diagnostics.Process
+    $Process.StartInfo = $StartInfo
     try {
-        $Process = Start-Process -FilePath $Lcp -ArgumentList $Arguments -NoNewWindow -PassThru -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr
+        [void]$Process.Start()
         if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
             try {
                 $Process.Kill()
@@ -43,14 +50,8 @@ function Invoke-LcpCommand {
             throw "$CommandName timed out after $TimeoutSeconds seconds."
         }
 
-        $Output = ""
-        if ((Test-Path $Stdout) -and ((Get-Item $Stdout).Length -gt 0)) {
-            $Output = (Get-Content $Stdout -Raw).Trim()
-        }
-        $ErrorOutput = ""
-        if ((Test-Path $Stderr) -and ((Get-Item $Stderr).Length -gt 0)) {
-            $ErrorOutput = (Get-Content $Stderr -Raw).Trim()
-        }
+        $Output = $Process.StandardOutput.ReadToEnd().Trim()
+        $ErrorOutput = $Process.StandardError.ReadToEnd().Trim()
         if ($Output) {
             Write-Host $Output
         }
@@ -59,7 +60,9 @@ function Invoke-LcpCommand {
         }
         return $Process.ExitCode
     } finally {
-        Remove-Item -LiteralPath $Stdout, $Stderr -Force -ErrorAction SilentlyContinue
+        if ($Process) {
+            $Process.Dispose()
+        }
     }
 }
 

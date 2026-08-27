@@ -8,6 +8,7 @@ use lcp_ipc::client::IpcClient;
 
 const AUTOSTART_RETRY_ATTEMPTS: u32 = 30;
 const AUTOSTART_RETRY_DELAY: Duration = Duration::from_millis(150);
+const IPC_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub async fn connect_or_autostart() -> anyhow::Result<IpcClient> {
     if let Ok(client) = try_connect().await {
@@ -27,13 +28,22 @@ pub async fn try_connect() -> std::io::Result<IpcClient> {
     #[cfg(unix)]
     {
         let path = lcp_ipc::unix::default_socket_path()?;
-        let stream = lcp_ipc::unix::connect(&path).await?;
+        let stream = tokio::time::timeout(IPC_CONNECT_TIMEOUT, lcp_ipc::unix::connect(&path))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "IPC connect timed out")
+            })??;
         Ok(IpcClient::spawn(stream))
     }
     #[cfg(windows)]
     {
         let user_id = lcp_ipc::windows::current_user_identifier();
-        let stream = lcp_ipc::windows::connect(&user_id).await?;
+        let stream =
+            tokio::time::timeout(IPC_CONNECT_TIMEOUT, lcp_ipc::windows::connect(&user_id))
+                .await
+                .map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::TimedOut, "IPC connect timed out")
+                })??;
         Ok(IpcClient::spawn(stream))
     }
 }
